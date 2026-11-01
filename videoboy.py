@@ -4,6 +4,7 @@ videoboy.py (VIDEO BOY) – macht aus einer beliebigen Videodatei ein Game-Boy-R
 
     python3 videoboy.py film.mp4                 -> film.gb
     python3 videoboy.py film.mp4 -o clip.gb --start 0:30 --duration 60 --fps 30
+    python3 videoboy.py film.mp4 --gbc --compress     -> film.gbc (Game Boy Color, Farbe)
 
 Benötigt: Python 3.8+, numpy, ffmpeg/ffprobe im PATH.
 Ausgabe: MBC5-ROM bis 8 MB, läuft auf echter Hardware per Flashcart
@@ -114,22 +115,26 @@ def read_video(path, tw, th, n, ss, dur, fill):
     return frames[: len(frames) // (W * H) * W * H].reshape(-1, H, W)
 
 
-def read_audio(path, ss, dur, mono=False):
-    """Ton dekodieren und aufbereiten (Filterkette aus MP3 BOY, angepasst an 9198 Hz):
+def read_audio(path, ss, dur, mono=False, rate=9198):
+    """Ton dekodieren und aufbereiten (Filterkette aus MP3 BOY, angepasst an die Abtastrate):
     Trittschall weg, Bandbegrenzung unter Nyquist, weniger Dröhnen, mehr Präsenz,
     Lautheitsausgleich, Kompressor, Ausgleich der Höhendämpfung durch das
     Sample-and-Hold des Game Boy, Limiter."""
-    af = ("highpass=f=90,lowpass=f=4200,"
+    if rate > 12000:                               # GBC: 18396 Hz (Werte wie MP3 BOY bei 16384 Hz)
+        lp, shelf = 8000, 5000
+    else:
+        lp, shelf = 4200, 2800
+    af = (f"highpass=f=90,lowpass=f={lp},"
           "equalizer=f=250:t=q:w=1:g=-2,"            # weniger Dröhnen
-          "equalizer=f=2500:t=q:w=1:g=2,"            # mehr Präsenz
+          f"equalizer=f={2500 if rate < 12000 else 3000}:t=q:w=1:g=2,"   # mehr Präsenz
           "dynaudnorm=f=75:g=7:p=0.9:m=40:s=12,"
           "acompressor=threshold=0.05:ratio=8:attack=2:release=60:makeup=4,"
-          "highshelf=f=2800:g=2.5:t=q:w=0.7,"        # Halteglied-Ausgleich
+          f"highshelf=f={shelf}:g=2.5:t=q:w=0.7,"   # Halteglied-Ausgleich
           "alimiter=limit=0.98:attack=1:release=20")
     ch = "1" if mono else "2"
-    for resample in (",aresample=9198:resampler=soxr", ""):
+    for resample in (f",aresample={rate}:resampler=soxr", ""):
         cmd = ["ffmpeg", "-v", "error"] + ss + ["-i", path] + dur + \
-              ["-vn", "-af", af + resample, "-ac", ch, "-ar", "9198", "-f", "f32le", "-"]
+              ["-vn", "-af", af + resample, "-ac", ch, "-ar", str(rate), "-f", "f32le", "-"]
         raw = subprocess.run(cmd, capture_output=True)
         if raw.returncode == 0:
             break
@@ -171,12 +176,11 @@ def encode_tiles(idx):
     return out.reshape(F, th * tw * 16)
 
 
-def _quantize_channel(ch, gate=0.03, shape=0.3):
+def _quantize_channel(ch, gate=0.03, shape=0.3, rate=9198):
     """Float [-1,1] -> Stufen 0..7 (aus MP3 BOY):
     symmetrisch um 3.5, Rauschformung schiebt das Quantisierungsrauschen in tiefe
     Frequenzen, wo es von der Musik verdeckt wird; Stille liegt exakt auf Stufe 4.
     Formungsstärke 0.3 statt 0.8: bei 9198 Hz gemessen am besten (A-bewertet)."""
-    rate = int(AUDIO_HZ)
     w = rate // 50
     env = np.convolve(np.abs(ch), np.ones(w) / w, "same")
     silent = env < gate
@@ -204,7 +208,7 @@ def _quantize_channel(ch, gate=0.03, shape=0.3):
     return np.frombuffer(bytes(out), dtype=np.uint8)
 
 
-def quantize_audio(a, gain=1.0):
+def quantize_audio(a, gain=1.0, shape=0.3, rate=9198):
     """(N,2) Float -> NR50-Bytes: Bits 6-4 links, 2-0 rechts (Stereo)."""
     if len(a) == 0:
         return np.zeros(0, np.uint8)
@@ -213,8 +217,8 @@ def quantize_audio(a, gain=1.0):
         return np.full(len(a), SILENCE, np.uint8)
     y = a / peak
     y = np.tanh(y * 1.1 * gain) / np.tanh(1.1)
-    l = _quantize_channel(y[:, 0])
-    r = _quantize_channel(y[:, 1])
+    l = _quantize_channel(y[:, 0], shape=shape, rate=rate)
+    r = _quantize_channel(y[:, 1], shape=shape, rate=rate)
     return ((l << 4) | r).astype(np.uint8)
 
 
@@ -406,6 +410,538 @@ def write_preview(path, idx, audio, n, sound):
         print("Warnung: Vorschau fehlgeschlagen:\n" + p.stderr.decode(errors="replace"), file=sys.stderr)
 
 
+# =============================================================================
+#  GAME BOY COLOR (--gbc)
+# =============================================================================
+PLAYER_GBC_B64 = "eNrt1k9o01AcB/AXu/7J5tZ189DNqemYUnpYKnrYoXvUrTI8SD1ZPO0gbG6H9SAOkQ3a9X+3wfy/nTx58hBUpMgu0yoYuwheRGGVn4KDDScPdnGZtCath22C4D8I+vukebQv6e998xJ4IeQ/lz/FvVgbGFisJ3Wm8yRGdpN6YnMcSGdIw9LiyHKx+GZufn7w7EjDx8Xi0tyt+YdH6OkTgePBnuCZ3mqFBW1vqXwbfpIqOdymdWdp/TABFijNdKkS+CUog516gVAOTjbqbVDJ81KldRGvg8wqL3m910W6vv2IwDmL9r8hs7CpmkToVWtE6NF6D0nQ6vKWadnS2G4Wvmg9rVSANgn20RTspwE4CB0SWKgZrNQGx6gFyhKkIQPTkISUD7IQ5TpraQb81XS1Jv18O10BM4t2Q/T5axPL5Nxd3ZDxNLX91Efg9jhNyoqN2QshgRvVK/92qUDp8vaMhsp2xajZ8sM1Sge/paDSyX83l3rfzjO2X5ES4v/shF018M28ZuBs1w2c7YaBs900cLZZA2eb8f6lbMomT2cgolfs0ypqA4xuGehXBmjaUWPHXES6IfL4gi2/wbFsbsGTczf73E79Wvo9oWW/1QrBwj15HCbGIOZslmCC+iHG4j6IC2aW8EFCW5WzMpsMs6lBfU1m07lnTxuGPO9/vD2SWTLMUg8Eq3KHpxlnDfN/cmpLbnyVCCyxSrxsIshifSonRsPqLjE9OA6TYzClDTbt8JMWSVuvsyz5ioMkS70lkFKJCFFZOxyXIFENqZpFSKoWEVKyi0QcRJDa9166L2zIHLF5mprrLt4VPssfaCMQVtnEZXtYfwVhafG2Nlx67J2sFPlCyK29h1TeDKJyof+Zfu/dqt4Kqn64372mP6qCWn0o5ABBCCGEEEIIIYQQQgghhBBCCCGEEEIIIaPgjnI4CQghhBBCCCGEEPqnfQXa3cXx"
+GBC_AUDIO_HZ = CPU_HZ / 228                       # 2 Samples pro Zeile = 18396 Hz
+GBC_SAMPLES_PER_FRAME = 2 * LINES                 # 308
+GBC_MAX_TILES = 360
+GBC_SPLIT = 232                                   # Kacheln im ersten VRAM-Abschnitt
+GBC_BORDER = 232                                  # Rand-Kachel (Bank 0, $8E80)
+GBC_CFG = 0x2F00
+GBC_MAPS = 0x3000
+
+
+def gbc_cap(n):
+    """Transfer-Slots pro Paket: 144 sichtbare + 19 VBlank-Slots pro LCD-Frame,
+    minus 5 für Palettenwechsel und Umschalten."""
+    return 163 * n - 5
+
+
+def gbc_full_slots(tw, th):
+    t = tw * th
+    runs = 1 + (1 if t > 0 else 0) + (1 if t > GBC_SPLIT else 0)
+    return t + 2 * th + runs + 1
+
+
+def choose_layout_gbc(aspect, n, size_arg):
+    cap = gbc_cap(n)
+    if size_arg:
+        try:
+            pw, ph = map(int, size_arg.lower().split("x"))
+        except ValueError:
+            die("--size erwartet z. B. 160x88")
+        if pw % 8 or ph % 8 or pw > 160 or ph > 144:
+            die("--size: Vielfache von 8, maximal 160x144")
+        return pw // 8, ph // 8
+    best = None
+    for th in range(1, 19):
+        for tw in range(1, 21):
+            if gbc_full_slots(tw, th) > cap:
+                continue
+            err = abs(math.log((tw / th) / aspect))
+            if err > 0.12:
+                continue
+            key = (tw * th, -err)
+            if best is None or key > best[0]:
+                best = (key, tw, th)
+    if best is None:
+        return 20, 1
+    return best[1], best[2]
+
+
+def gbc_tile_loc(t, b):
+    """Kachel t im Puffer b -> (VRAM-Bank, Adresse, Index in der Tilemap)"""
+    if b == 0:                                    # Puffer A, Adressierung $8000
+        if t < GBC_SPLIT:
+            return 0, 0x8000 + 16 * t, t
+        return 1, 0x8000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT
+    if t < GBC_SPLIT:                             # Puffer B, Adressierung $8800
+        return 1, 0x8980 + 16 * t, (152 + t) & 0xFF
+    return 0, 0x9000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT
+
+
+def gbc_maps(tw, th):
+    """Startinhalt: Tilemaps A/B (Bank 0) und Attribut-Maps A/B (Bank 1)"""
+    x0, y0 = (20 - tw) // 2, (18 - th) // 2
+    idx = [np.full((32, 32), GBC_BORDER, np.uint8) for _ in range(2)]
+    att = [np.zeros((32, 32), np.uint8) for _ in range(2)]
+    for b in range(2):
+        for t in range(tw * th):
+            bank, _, ix = gbc_tile_loc(t, b)
+            idx[b][y0 + t // tw, x0 + t % tw] = ix
+            att[b][y0 + t // tw, x0 + t % tw] = bank << 3
+    return idx[0].tobytes() + idx[1].tobytes() + att[0].tobytes() + att[1].tobytes()
+
+
+def read_video_rgb_stream(path, tw, th, n, ss, dur, fill):
+    W, H = tw * 8, th * 8
+    fps = f"{CPU_HZ}/{FRAME_CYCLES * n}"
+    if fill:
+        vf = (f"scale=iw*sar:ih,fps={fps},scale={W}:{H}:force_original_aspect_ratio=increase:flags=area,"
+              f"crop={W}:{H},format=rgb24")
+    else:
+        vf = (f"scale=iw*sar:ih,fps={fps},scale={W}:{H}:force_original_aspect_ratio=decrease:flags=area,"
+              f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black,format=rgb24")
+    cmd = ["ffmpeg", "-v", "error"] + ss + ["-i", path] + dur + ["-an", "-vf", vf, "-f", "rawvideo", "-"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    size = W * H * 3
+    while True:
+        buf = p.stdout.read(size)
+        if len(buf) < size:
+            break
+        yield np.frombuffer(buf, np.uint8).reshape(H, W, 3)
+    p.wait()
+
+
+class GBCQuantizer:
+    """Pro Bild 8 Paletten x 4 Farben (RGB555) und eine Palette pro Kachel.
+    k-means über Kacheln und Pixel, warm gestartet mit den Paletten des vorigen
+    Bildes; bleiben die alten Paletten fast so gut, werden sie unverändert übernommen
+    (ruhiges Bild, bessere Kompression)."""
+
+    def __init__(self, tw, th, dither, border, gamma):
+        self.tw, self.th = tw, th
+        self.dither, self.border, self.gamma = dither, border, gamma
+        self.prev = None
+        self.prev_err = None
+        self.count = 0
+        thr = (BAYER4 + 0.5) / 16.0
+        self.thr = np.tile(thr, (2, 2)).reshape(64)          # 8x8 Kachel
+
+    def _tiles(self, img):
+        th, tw = self.th, self.tw
+        return img.reshape(th, 8, tw, 8, 3).transpose(0, 2, 1, 3, 4).reshape(th * tw, 64, 3)
+
+    @staticmethod
+    def _dist(X, P):
+        # X (T,64,3), P (8,4,3) -> (T,64,8,4)  (quadratische Abstände per Matrixprodukt)
+        T = len(X)
+        Xf = X.reshape(-1, 3).astype(np.float32)
+        Pf = P.reshape(-1, 3).astype(np.float32)
+        d = (Xf * Xf).sum(1)[:, None] - 2.0 * (Xf @ Pf.T) + (Pf * Pf).sum(1)[None]
+        return np.maximum(d, 0).reshape(T, 64, 8, 4)
+
+    def _tile_err(self, X, P):
+        """(T,8): Fehler jeder Kachel mit jeder Palette"""
+        d = self._dist(X, P)
+        m = np.minimum(np.minimum(d[..., 0], d[..., 1]), np.minimum(d[..., 2], d[..., 3]))
+        return m.sum(1)
+
+    def _assign(self, X, P):
+        d = self._tile_err(X, P)                           # (T,8)
+        a = d.argmin(1)
+        return a, d[np.arange(len(a)), a].sum()
+
+    def _fix(self, P):
+        P = np.clip(np.rint(P), 0, 31)
+        if self.border:
+            P[0, 0] = 0
+        return P
+
+    def _refine(self, X, P, a, iters=2):
+        P = P.copy()
+        for p in range(8):
+            m = X[a == p].reshape(-1, 3)
+            if len(m) == 0:
+                continue
+            for _ in range(iters):
+                lab = ((m[:, None, :] - P[p][None]) ** 2).sum(-1).argmin(1)
+                for c in range(4):
+                    sel = m[lab == c]
+                    if len(sel):
+                        P[p, c] = sel.mean(0)
+        return P
+
+    def _cold(self, X):
+        T = len(X)
+        means = X.mean(1)
+        lum = means @ np.array([0.3, 0.59, 0.11])
+        order = np.argsort(lum)
+        cent = means[order[np.linspace(0, T - 1, 8).astype(int)]].copy()
+        for _ in range(6):
+            lab = ((means[:, None] - cent[None]) ** 2).sum(-1).argmin(1)
+            for k in range(8):
+                if (lab == k).any():
+                    cent[k] = means[lab == k].mean(0)
+        P = np.zeros((8, 4, 3))
+        for k in range(8):
+            m = X[lab == k].reshape(-1, 3) if (lab == k).any() else X[order[(k * T) // 8]]
+            l = m @ np.array([0.3, 0.59, 0.11])
+            o = np.argsort(l)
+            for c in range(4):
+                P[k, c] = m[o[min(len(o) - 1, int((c + 0.5) / 4 * len(o)))]]
+        a, _ = self._assign(X, P)
+        for _ in range(3):
+            P = self._refine(X, P, a, 2)
+            a, _ = self._assign(X, P)
+        return P
+
+    def _reseed_empty(self, X, P, a):
+        used = np.bincount(a, minlength=8)
+        if used.min() > 0:
+            return P
+        d = self._tile_err(X, P)[np.arange(len(a)), a]
+        worst = np.argsort(d)[::-1]
+        j = 0
+        for p in np.nonzero(used == 0)[0]:
+            t = worst[j % len(worst)]; j += 1
+            m = X[t]
+            o = np.argsort(m @ np.array([0.3, 0.59, 0.11]))
+            for c in range(4):
+                P[p, c] = m[o[min(63, int((c + 0.5) * 16))]]
+        return P
+
+    def quantize(self, frame):
+        img = frame.astype(np.float64) / 255.0
+        if self.gamma != 1.0:
+            img = img ** self.gamma
+        img = img * 31.0
+        X = self._tiles(img)
+        cands = []
+        if self.prev is not None:
+            a, e = self._assign(X, self.prev)
+            cands.append((e * 0.92, self.prev, "prev"))     # Hysterese: alte Paletten bevorzugen
+            Pw = self.prev.copy()
+            for _ in range(2):
+                Pw = self._reseed_empty(X, Pw, a)
+                Pw = self._fix(self._refine(X, Pw, a, 2))
+                a, e = self._assign(X, Pw)
+            cands.append((e, Pw, "warm"))
+            scene = self.prev_err is not None and e > 1.6 * self.prev_err + 1
+        else:
+            scene = True
+        if scene or self.count % 48 == 0:
+            Pc = self._fix(self._cold(X))
+            a, e = self._assign(X, Pc)
+            cands.append((e, Pc, "cold"))
+        e, P, _ = min(cands, key=lambda c: c[0])
+        P = self._fix(P)
+        a, err = self._assign(X, P)
+        self.prev, self.prev_err = P, err
+        self.count += 1
+        # Pixel -> Farbindex (geordnetes Dithering zwischen den zwei nächsten Farben)
+        Pt = P[a]                                            # (T,4,3)
+        d = ((X[:, :, None, :] - Pt[:, None, :, :]) ** 2).sum(-1)   # (T,64,4)
+        if not self.dither:
+            return P.astype(np.uint8), a.astype(np.uint8), d.argmin(-1).astype(np.uint8)
+        o = np.argsort(d, -1)
+        c1, c2 = o[..., 0], o[..., 1]
+        A = Pt[np.arange(len(a))[:, None], c1]
+        B = Pt[np.arange(len(a))[:, None], c2]
+        v = B - A
+        t = ((X - A) * v).sum(-1) / np.maximum((v * v).sum(-1), 1e-9)
+        idx = np.where(t > self.thr[None, :], c2, c1)
+        return P.astype(np.uint8), a.astype(np.uint8), idx.astype(np.uint8)
+
+
+def gbc_tile_bytes(idx):
+    """(T,64) Farbindizes -> (T,16) 2bpp"""
+    t = idx.reshape(-1, 8, 8)
+    w = (1 << np.arange(7, -1, -1)).astype(np.uint16)
+    lo = ((t & 1) * w).sum(-1).astype(np.uint8)
+    hi = (((t >> 1) & 1) * w).sum(-1).astype(np.uint8)
+    return np.stack([lo, hi], -1).reshape(-1, 16)
+
+
+def gbc_pal_bytes(P):
+    v = P[..., 0].astype(np.uint16) | (P[..., 1].astype(np.uint16) << 5) | (P[..., 2].astype(np.uint16) << 10)
+    return v.astype("<u2").tobytes()
+
+
+class GBCEncoder:
+    """Hält nach, was in den beiden Bildpuffern auf dem Game Boy steht, und baut
+    daraus die Pakete (voll oder nur Änderungen)."""
+
+    def __init__(self, tw, th, n, compress, tol):
+        self.tw, self.th, self.n = tw, th, n
+        self.T = tw * th
+        self.compress, self.tol = compress, tol
+        self.cap = gbc_cap(n)
+        self.x0, self.y0 = (20 - tw) // 2, (18 - th) // 2
+        self.buf_idx = [None, None]
+        self.buf_pal = [None, None]
+        self.locs = [[gbc_tile_loc(t, b) for t in range(self.T)] for b in range(2)]
+        self.k = 0
+        self.sent = 0
+
+    def _attr_chunks(self, b, pal, rows):
+        base = 0x9800 if b == 0 else 0x9C00
+        out = []
+        for r in rows:
+            row = np.zeros(32, np.uint8)
+            for tx in range(self.tw):
+                t = r * self.tw + tx
+                row[self.x0 + tx] = (self.locs[b][t][0] << 3) | pal[t]
+            addr = base + (self.y0 + r) * 32
+            out.append((1, addr, row[:16].tobytes()))
+            out.append((1, addr + 16, row[16:].tobytes()))
+        return out
+
+    def packet(self, audio_bytes, P, pal, idx, tiles):
+        b = self.k & 1
+        T = self.T
+        full = (not self.compress) or self.buf_idx[b] is None
+        if not full:
+            Pf = P.astype(np.int16)
+            cur = Pf[self.buf_pal[b][:, None], self.buf_idx[b]]     # (T,64,3) wie es jetzt aussähe
+            new = Pf[pal[:, None], idx]
+            diff = np.abs(cur - new).max(-1)
+            thr = 0 if self.tol == 0 else 2
+            changed = np.nonzero((diff > thr).sum(1) > self.tol)[0]
+            npal = self.buf_pal[b].copy()
+            nidx = self.buf_idx[b].copy()
+            npal[changed] = pal[changed]
+            nidx[changed] = idx[changed]
+            rows = sorted(set((changed // self.tw).tolist()))
+            old_att = self._attr_chunks(b, self.buf_pal[b], rows)
+            new_att = self._attr_chunks(b, npal, rows)
+            att = [c for c, o in zip(new_att, old_att) if c[2] != o[2]]
+            chunks = [(self.locs[b][t][0], self.locs[b][t][1], tiles[t].tobytes()) for t in changed] + att
+            if len(chunks) + len(self._runs(chunks)) + 1 > self.cap:
+                full = True
+        if full:
+            changed = np.arange(T)
+            npal, nidx = pal.copy(), idx.copy()
+            chunks = [(self.locs[b][t][0], self.locs[b][t][1], tiles[t].tobytes()) for t in range(T)] + \
+                     self._attr_chunks(b, npal, range(self.th))
+        self.buf_pal[b], self.buf_idx[b] = npal, nidx
+        self.sent += len(changed)
+        self.k += 1
+        p = bytearray(audio_bytes) + gbc_pal_bytes(P)
+        for bank, addr, data in self._runs(chunks):
+            p += bytes([len(data) // 16, addr & 0xFF, (addr >> 8) | (bank << 6)]) + data
+        p += b"\x00"
+        rendered = (self.buf_pal[b], self.buf_idx[b])
+        return bytes(p), rendered
+
+    @staticmethod
+    def _runs(chunks):
+        runs = []
+        for bank, addr, data in sorted(chunks, key=lambda c: (c[0], c[1])):
+            if runs and runs[-1][0] == bank and runs[-1][1] + len(runs[-1][2]) == addr and len(runs[-1][2]) < 254 * 16:
+                runs[-1][2] += data
+            else:
+                runs.append([bank, addr, bytearray(data)])
+        return runs
+
+
+def gbc_render(P, pal, idx, tw, th):
+    """Bildschirm 160x144 RGB (8 bit), wie ihn der Game Boy Color zeigt."""
+    col = P.astype(np.uint16)[pal[:, None], idx]                     # (T,64,3) 0..31
+    col = (col * 255 // 31).astype(np.uint8)
+    img = col.reshape(th, tw, 8, 8, 3).transpose(0, 2, 1, 3, 4).reshape(th * 8, tw * 8, 3)
+    scr = np.zeros((144, 160, 3), np.uint8)
+    y0, x0 = (144 - th * 8) // 2, (160 - tw * 8) // 2
+    scr[y0:y0 + th * 8, x0:x0 + tw * 8] = img
+    return scr
+
+
+def gbc_place(pkts, max_banks=MAX_BANKS):
+    """Pakete auf Bänke verteilen; gibt (Daten, Bänke) oder None zurück."""
+    data = bytearray()
+    last_end = None
+    for p in pkts:
+        if data and len(data) % BANK == 0:
+            data[last_end] = 0xFF
+        elif len(data) % BANK + len(p) > BANK:
+            data[last_end] = 0xFF
+            data += bytes([0xFF]) * (BANK - len(data) % BANK)
+        data += p
+        last_end = len(data) - 1
+        if -(-len(data) // BANK) > max_banks - 1:
+            return None
+    nb = -(-len(data) // BANK)
+    data += bytes([0xFF]) * (nb * BANK - len(data))
+    return bytes(data), nb
+
+
+def gbc_finalize(n, tw, th, data, nbanks, npk, title):
+    bank0 = bytearray(zlib.decompress(base64.b64decode(PLAYER_GBC_B64))[:BANK])
+    aud = GBC_SAMPLES_PER_FRAME * n
+    cfg = bytes([n]) + aud.to_bytes(2, "little") + \
+          bytes([(-4 * (tw % 2)) & 0xFF, (-4 * (th % 2)) & 0xFF]) + npk.to_bytes(2, "little")
+    bank0[GBC_CFG:GBC_CFG + len(cfg)] = cfg
+    bank0[GBC_MAPS:GBC_MAPS + 4096] = gbc_maps(tw, th)
+    total = 1 + nbanks
+    size_code = 0
+    while (2 << size_code) < total:
+        size_code += 1
+    rom = bytearray(bank0 + data)
+    rom += bytes([0xFF]) * ((2 << size_code) * BANK - len(rom))
+    t = title.upper().encode("ascii", "replace")[:11]
+    rom[0x134:0x143] = t + bytes(15 - len(t))
+    rom[0x143] = 0xC0                              # nur Game Boy Color
+    rom[0x147] = 0x19
+    rom[0x148] = size_code
+    rom[0x149] = 0x00
+    c = 0
+    for b in rom[0x134:0x14D]:
+        c = (c - b - 1) & 0xFF
+    rom[0x14D] = c
+    rom[0x14E] = rom[0x14F] = 0
+    g = sum(rom) & 0xFFFF
+    rom[0x14E], rom[0x14F] = g >> 8, g & 0xFF
+    return bytes(rom)
+
+
+def gbc_encode(src, ss, dur, tw, th, n, args, audio, preview_path):
+    """Ein Durchlauf: Video streamen, quantisieren, Pakete bauen.
+    Gibt (Pakete, Bilderzahl, Anteil übertragener Kacheln) zurück."""
+    aud_len = GBC_SAMPLES_PER_FRAME * n
+    border = tw < 20 or th < 18
+    q = GBCQuantizer(tw, th, not args.no_dither, border, args.gamma)
+    enc = GBCEncoder(tw, th, n, args.compress, args.tolerance)
+    pkts = []
+    limit = (MAX_BANKS - 1) * BANK
+    pos = 0                                        # exakte Bankbelegung wie in gbc_place
+    tail = aud_len + 64 + 1
+    prev = None
+    pv = None
+    if preview_path:
+        pv = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "160x144",
+                               "-r", f"{CPU_HZ}/{FRAME_CYCLES * n}", "-i", "-", "-vf", "scale=640:576:flags=neighbor",
+                               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", preview_path + ".v.mp4"],
+                              stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    k = 0
+    for frame in read_video_rgb_stream(src, tw, th, n, ss, dur, not args.fit):
+        P, pal, idx = q.quantize(frame)
+        tiles = gbc_tile_bytes(idx)
+        a = audio[(k - 1) * aud_len: k * aud_len] if k else np.full(aud_len, SILENCE, np.uint8)
+        a = np.concatenate([a, np.full(aud_len - len(a), SILENCE, np.uint8)]).tobytes()
+        p, (rp, ri) = enc.packet(a, P, pal, idx, tiles)
+        np_ = pos + (BANK - pos % BANK if pos % BANK and pos % BANK + len(p) > BANK else 0) + len(p)
+        nt = np_ + (BANK - np_ % BANK if np_ % BANK and np_ % BANK + tail > BANK else 0) + tail
+        if nt > limit:                             # 8 MB voll (inkl. Abschluss-Paket)
+            break
+        pos = np_
+        pkts.append(p)
+        prev = P
+        if pv:
+            pv.stdin.write(gbc_render(P, rp, ri, tw, th).tobytes())
+        k += 1
+        if k % 200 == 0:
+            print(f"  {k} Bilder …", end="\r", flush=True)
+    if pv:
+        pv.stdin.close()
+        pv.wait()
+    F = len(pkts)
+    if F:
+        a = audio[(F - 1) * aud_len: F * aud_len]
+        a = np.concatenate([a, np.full(aud_len - len(a), SILENCE, np.uint8)]).tobytes()
+        pkts.append(a + gbc_pal_bytes(prev) + b"\x00")          # Abschluss: Ton des letzten Bildes
+    ratio = enc.sent / max(1, enc.k * tw * th)
+    return pkts, F, ratio
+
+
+def main_gbc(args, aspect, dur_s, has_audio, ss, auto):
+    fps_map = {"60": 1, "30": 2, "20": 3, "15": 4, "12": 5, "10": 6}
+    n = 3 if auto else fps_map[args.fps]
+    if auto and not args.compress:
+        # ohne Kompression ist die Länge vorab berechenbar: höchste Bildrate, die passt,
+        # sonst die mit der größten Spielzeit (Pakete dürfen keine Bankgrenze überschreiten)
+        best = None
+        for m in (3, 4, 5, 6):
+            tw, th = choose_layout_gbc(aspect, m, args.size)
+            if gbc_full_slots(tw, th) > gbc_cap(m):
+                continue
+            size = GBC_SAMPLES_PER_FRAME * m + 64 + tw * th * 16 + 2 * th * 16 + 4 * 3 + 1
+            secs = ((MAX_BANKS - 1) * (BANK // size) - 1) * m / LCD_FPS
+            if secs >= dur_s:
+                best = (m, secs)
+                break
+            if best is None or secs > best[1]:
+                best = (m, secs)
+        if best:
+            n = best[0]
+    sound = not (args.no_audio or not has_audio)
+    MAX_READ = 20 * 60
+    read_s = min(dur_s, MAX_READ)
+    dur = ["-t", f"{read_s:.3f}"] if (args.duration or read_s < dur_s) else []
+    if sound:
+        print("Lese Ton …")
+        audio_f = read_audio(args.input, ss, dur, args.mono, rate=int(round(GBC_AUDIO_HZ)))
+        audio = quantize_audio(audio_f, args.volume, shape=0.3, rate=int(round(GBC_AUDIO_HZ)))
+    else:
+        audio = np.zeros(0, np.uint8)
+    title = args.title or os.path.splitext(os.path.basename(args.input))[0]
+    src, vss, vdur = args.input, ss, dur
+    tmpdir = None
+    try:
+        if auto:
+            tw, th = choose_layout_gbc(aspect, n, args.size)
+            W, H = tw * 8, th * 8
+            fit = (f"force_original_aspect_ratio=decrease:flags=area,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black"
+                   if args.fit else f"force_original_aspect_ratio=increase:flags=area,crop={W}:{H}")
+            tmpdir = tempfile.mkdtemp(prefix="videoboy_")
+            src = os.path.join(tmpdir, "zw.mkv")
+            print("Dekodiere Video …")
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y"] + ss + ["-i", args.input] + dur +
+                               ["-an", "-vf", f"scale=iw*sar:ih,scale={W}:{H}:{fit},format=rgb24",
+                                "-c:v", "ffv1", src], capture_output=True)
+            if r.returncode:
+                die("ffmpeg (Video) fehlgeschlagen:\n" + r.stderr.decode(errors="replace"))
+            vss, vdur = [], []
+        while True:
+            tw, th = choose_layout_gbc(aspect, n, args.size)
+            if gbc_full_slots(tw, th) > gbc_cap(n):
+                die(f"{tw*8}x{th*8} ist bei {LCD_FPS/n:.0f} fps zu groß für den Game Boy Color – "
+                    f"--fps senken oder --size verkleinern")
+            print(f"Game Boy Color: {tw*8}x{th*8} Pixel, {LCD_FPS/n:.2f} fps, 8 Paletten x 4 Farben, "
+                  f"{'Kompression an (Toleranz ' + str(args.tolerance) + ')' if args.compress else 'ohne Kompression'}, "
+                  f"Ton: {'18396 Hz, 3 bit ' + ('Mono' if args.mono else 'Stereo') if sound else 'aus'}")
+            print("Wandle um …")
+            pkts, F, ratio = gbc_encode(src, vss, vdur, tw, th, n, args, audio,
+                                        args.preview if args.preview else None)
+            expected = int(read_s * LCD_FPS / n) - 2
+            if F >= expected or not auto or not args.compress or n >= 6:
+                break
+            nn = min(6, max(n + 1, math.ceil(n * expected / max(F, 1) * 0.9)))
+            print(f"  passt bei {LCD_FPS/n:.0f} fps nicht in 8 MB – versuche {LCD_FPS/nn:.0f} fps")
+            n = nn
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    if F == 0:
+        die("keine Bilder gelesen")
+    if F < int(read_s * LCD_FPS / n) - 2:
+        print(f"Hinweis: passt nicht ganz in 8 MB – auf {F*n/LCD_FPS:.0f} s gekürzt.", file=sys.stderr)
+    data, nbanks = gbc_place(pkts)
+    rom = gbc_finalize(n, tw, th, data, nbanks, len(pkts), title)
+    out = args.output or os.path.splitext(args.input)[0] + ".gbc"
+    with open(out, "wb") as f:
+        f.write(rom)
+    print(f"Fertig: {out}  ({len(rom)//1024} KB, {F} Bilder, {F*n/LCD_FPS:.1f} s, MBC5, nur Game Boy Color)")
+    if args.compress:
+        print(f"  Kompression: {ratio*100:.0f} % der Kacheln übertragen")
+    if args.preview:
+        v = args.preview + ".v.mp4"
+        if sound:
+            tmpa = args.preview + ".a.raw"
+            a = audio[:(F + 1) * GBC_SAMPLES_PER_FRAME * n]
+            (np.stack([(a >> 4) & 7, a & 7], 1).astype(np.float32) / 3.5 - 1.0).tofile(tmpa)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", v, "-f", "f32le", "-ar", str(int(round(GBC_AUDIO_HZ))),
+                            "-ac", "2", "-i", tmpa, "-af", "highpass=f=20", "-c:v", "copy", "-c:a", "aac",
+                            "-ar", "44100", "-shortest", args.preview])
+            os.remove(tmpa)
+            os.remove(v)
+        else:
+            os.replace(v, args.preview)
+        print(f"Vorschau: {args.preview}")
+
+
+
 def main():
     ap = argparse.ArgumentParser(description="Video -> Game-Boy-ROM (DMG)")
     ap.add_argument("input")
@@ -423,6 +959,8 @@ def main():
     ap.add_argument("--mono", action="store_true", help="Ton in Mono statt Stereo")
     ap.add_argument("--title", help="ROM-Titel (max. 15 Zeichen)")
     ap.add_argument("--preview", help="zusätzlich Vorschau-MP4 schreiben")
+    ap.add_argument("--gbc", action="store_true",
+                    help="ROM für den Game Boy Color: Farbe, bis Vollbild, Ton mit 18396 Hz")
     ap.add_argument("--compress", action="store_true",
                     help="Kompressionsmodus: nur geänderte Bildteile speichern -> deutlich längere Videos")
     ap.add_argument("--tolerance", type=int, default=2,
@@ -451,6 +989,10 @@ def main():
     else:
         die("--fps: erlaubt sind auto, 60, 30, 20, 15, 12, 10")
 
+    if args.gbc:
+        if args.fps not in ("auto",) and args.fps not in fps_map:
+            die("--fps: erlaubt sind auto, 60, 30, 20, 15, 12, 10")
+        return main_gbc(args, aspect, dur_s, has_audio, ss, auto)
     if args.compress:
         return main_compressed(args, aspect, dur_s, has_audio, ss, auto, n)
 

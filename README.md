@@ -4,9 +4,15 @@
 **picture and stereo sound**. The ROM runs on the original **DMG-01** as well as on the
 Game Boy Pocket, Color and Advance.
 
-![VIDEO BOY](preview.gif)
+With `--gbc` it builds a **Game Boy Color** ROM instead: full colour, up to full screen, and
+twice the audio sample rate (see [Game Boy Color mode](#game-boy-color-mode---gbc)).
 
-*Captured from the cycle-accurate emulator SameBoy (DMG model). Footage: "Big Buck Bunny", see credits below.*
+| Game Boy (DMG) | Game Boy Color (`--gbc`) |
+|---|---|
+| ![VIDEO BOY](preview.gif) | ![VIDEO BOY COLOR](preview_color.gif) |
+
+*Captured from the cycle-accurate emulator SameBoy (DMG and CGB model, colour correction off).
+Footage: "Big Buck Bunny", see credits below.*
 
 ## Requirements
 
@@ -23,6 +29,7 @@ python3 videoboy.py movie.mp4                         # -> movie.gb
 python3 videoboy.py movie.mp4 -o clip.gb --start 1:20 --duration 45
 python3 videoboy.py movie.mp4 --fps 30                # smoother, but a smaller picture
 python3 videoboy.py movie.mp4 --compress              # compression mode: much more video per ROM
+python3 videoboy.py movie.mp4 --gbc --compress        # Game Boy Color ROM in colour -> movie.gbc
 python3 videoboy.py movie.mp4 --preview preview.mp4   # see and hear the result before flashing
 ```
 
@@ -39,6 +46,7 @@ python3 videoboy.py movie.mp4 --preview preview.mp4   # see and hear the result 
 | `--no-audio` | No sound |
 | `--title NAME` | ROM title in the cartridge header |
 | `--preview file.mp4` | Preview video in green DMG look, with sound |
+| `--gbc` | **Game Boy Color** ROM in colour (see below) |
 | `--compress` | **Compression mode**: much longer videos per ROM (see below) |
 | `--tolerance 2` | Only with `--compress`: how many pixels per 8×8 tile may differ before the tile is resent (0 = lossless) |
 
@@ -47,6 +55,7 @@ The command line messages of the tool are in German.
 **On the Game Boy:** START = pause, SELECT = restart. At the end, the video loops.
 
 `demo.gb` is a ready-to-play demo ROM (Game of Life animation with a melody).
+`demo_color.gbc` is a 15-second colour demo for the Game Boy Color (Big Buck Bunny).
 
 ## What the Game Boy can do
 
@@ -90,6 +99,42 @@ last frame in the same buffer. The player writes just these tiles to VRAM; every
 * The maximum picture size at 30 and 60 fps is slightly smaller than in normal mode (150 and 75 tiles).
 * `--preview` shows exactly the compressed result.
 
+## Game Boy Color mode (`--gbc`)
+
+```sh
+python3 videoboy.py movie.mp4 --gbc                    # -> movie.gbc
+python3 videoboy.py movie.mp4 --gbc --compress         # recommended: about 2x more video
+python3 videoboy.py movie.mp4 --gbc --size 160x144     # full screen (crops 16:9 material)
+```
+
+The ROM is for the Game Boy Color only (also runs on the Game Boy Advance). All other options work as in the
+DMG mode (`--fps`, `--size`, `--fit`, `--compress`, `--tolerance`, `--mono`, `--preview` …).
+
+* **Colour:** every frame gets 8 palettes of 4 colours each, chosen from the 32,768 colours of the GBC, and every
+  8×8 tile uses one of them, so up to 32 colours are visible at once. The converter picks the palettes per frame
+  with k-means clustering, keeps them stable from frame to frame (no colour flicker, better compression) and
+  dithers between the two closest colours of each tile's palette.
+* **Bigger picture:** the GBC runs in double speed (8 MHz) and copies 16 bytes per scanline instead of 8.
+  The second VRAM bank holds two full-screen buffers, so full screen (160×144) is possible at 20 fps.
+* **Better sound:** 2 samples per scanline = **18,396 Hz** instead of 9,198 Hz, 3-bit stereo. The second sample in
+  each line is timed with the hardware timer. Audio processing as in the DMG mode, with filters adapted to the
+  higher rate (close to MP3 BOY's 16,384 Hz).
+
+Uncompressed lengths in 8 MB (16:9 video):
+
+| fps | Picture size | Max. length |
+|---|---|---|
+| 60 | 120×72 | ~0:42 min |
+| 30 | 160×96 | ~0:51 min |
+| 20 | 160×96 | ~1:16 min |
+| 10 | 160×96 | ~1:42 min |
+| 20 | 160×144 (full screen) | ~0:51 min |
+
+Colour video needs a lot more data than grey video, so `--compress` is recommended. Measured with
+"Big Buck Bunny": 2× less memory at 20 fps; a 6-minute sequence with many cuts fits **2:38 min** at 10 fps
+(`--tolerance 2`) or 2:54 min (`--tolerance 4`), i.e. at 160×96 in colour. The sound takes up a noticeable part
+(18 KB per second). Without `--compress`, `--fps auto` picks the frame rate that gives the most length.
+
 ## How it works
 
 * **Picture:** 4 shades of grey with ordered dithering (Bayer 4×4). The steady pattern does not flicker in moving
@@ -114,7 +159,12 @@ last frame in the same buffer. The player writes just these tiles to VRAM; every
   run of tiles (start address + length, without touching VRAM). Packets have variable length; an end marker says
   whether the next packet follows directly or starts at the beginning of the next bank.
 
-Tested in the cycle-accurate emulator SameBoy (DMG model), in both modes: every frame arrives pixel-perfect at an
+* **Game Boy Color player** (`src/player_gbc.asm`): runs and headers as in the compression mode, but every run
+  header also carries the VRAM bank. Buffer A uses tile data `$8000–$8E7F` in bank 0 and `$8000–$87FF` in bank 1,
+  buffer B uses `$8980–$97FF` in bank 1 and `$9000–$97FF` in bank 0; each has its own tile map and attribute map.
+  The 64 palette bytes of a frame are written in four parts during VBlank when the buffers are switched.
+
+Tested in the cycle-accurate emulator SameBoy (DMG model; CGB model for `--gbc`), in all modes: every frame arrives pixel-perfect at an
 exactly even frame rate, picture and sound stay in sync, including 8 MB ROMs across all 511 banks and stress
 videos that use almost the full per-frame capacity. Pause and restart work. Not yet tested on real hardware.
 
@@ -122,14 +172,14 @@ Simple emulators that don't emulate the NR50 master volume register (e.g. PyBoy)
 
 ## Building the player yourself (optional)
 
-`videoboy.py` already contains the finished player. If you want to change `src/player.asm`, you need
-[RGBDS](https://rgbds.gbdev.io):
+`videoboy.py` already contains both finished players. If you want to change `src/player.asm` (DMG) or
+`src/player_gbc.asm` (Game Boy Color), you need [RGBDS](https://rgbds.gbdev.io):
 
 ```sh
-sh src/build.sh      # builds the player and embeds it into videoboy.py
+sh src/build.sh      # builds both players and embeds them into videoboy.py
 ```
 
 ## Credits
 
-Preview footage: "Big Buck Bunny" © Blender Foundation, [peach.blender.org](https://peach.blender.org),
+Preview footage and `demo_color.gbc`: "Big Buck Bunny" © Blender Foundation, [peach.blender.org](https://peach.blender.org),
 licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
