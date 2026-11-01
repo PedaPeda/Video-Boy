@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Boy Konverter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,100..125,400..900;1,100..125,400..900&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: a handheld console on the left (screen, transport, memory, actions), settings on the right.
+   The console shell carries the one signature shape: the big rounded lower-right corner. */
+:root {
+  --desk: #DEDEDF;        /* page */
+  --shell: #CAC7C0;       /* console plastic */
+  --shell-hi: #D8D5CF;
+  --bezel: #4A4E64;       /* screen surround */
+  --ink: #23275A;         /* navy print */
+  --berry: #A1245E;       /* buttons */
+  --led: #E3352B;
+  --mute: #5E6070;
+  --line: rgba(35, 39, 90, 0.16);
+  --card: #F2F2F3;
+  --ok: #2E7D4F;
+  --warn: #A3570B;
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--desk);
+  color: var(--ink);
+  font: 15px/1.5 var(--f-body);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--berry); outline-offset: 2px; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 48px; display: grid; gap: 28px; }
+
+/* ---------- header ---------- */
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px 24px; }
+.mark { display: grid; gap: 4px; }
+.mark h1 {
+  margin: 0; font: italic 850 clamp(34px, 5vw, 52px)/0.9 var(--f-display);
+  font-variation-settings: "wdth" 122; letter-spacing: -0.01em; color: var(--ink);
+}
+.mark p { margin: 0; color: var(--mute); max-width: 60ch; text-wrap: balance; }
+.modes { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--shell); box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+.modes button {
+  border: 0; background: transparent; padding: 9px 18px; border-radius: 999px; cursor: pointer;
+  font-weight: 600; display: inline-flex; align-items: center; gap: 8px; color: var(--ink);
+}
+.modes button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.swatch { width: 18px; height: 10px; border-radius: 3px; display: inline-block; }
+.swatch.dmg { background: linear-gradient(90deg, #0F380F 0 25%, #306230 0 50%, #8BAC0F 0 75%, #9BBC0F 0); }
+.swatch.gbc { background: linear-gradient(90deg, #D8344C 0 25%, #F2B231 0 50%, #2FA36B 0 75%, #3A6BD6 0); }
+
+/* ---------- main grid ---------- */
+.main { display: grid; grid-template-columns: minmax(340px, 470px) 1fr; gap: 28px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+
+/* ---------- console ---------- */
+.console {
+  background: linear-gradient(180deg, var(--shell-hi), var(--shell));
+  border-radius: 18px 18px 96px 18px;
+  padding: 22px 22px 34px;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.08), 0 18px 40px -18px rgba(35,39,90,.45);
+  display: grid; gap: 18px;
+  position: sticky; top: 16px;
+}
+@media (max-width: 900px) { .console { position: static; } }
+.bezel {
+  background: var(--bezel); border-radius: 12px 12px 44px 12px; padding: 14px 22px 22px 22px;
+  display: grid; gap: 10px;
+}
+.bezel-top { display: flex; align-items: center; gap: 10px; color: #C9CBDA; font-size: 12.5px; }
+.led { width: 9px; height: 9px; border-radius: 50%; background: #5C2D33; box-shadow: inset 0 1px 1px rgba(0,0,0,.4); flex: none; }
+.led.on { background: var(--led); box-shadow: 0 0 8px 1px rgba(227,53,43,.75); }
+.led.busy { animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .led.busy { animation: none; } }
+.status { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.screen {
+  position: relative; aspect-ratio: 10 / 9; width: 100%; border-radius: 4px; overflow: hidden;
+  background: #0F380F; box-shadow: inset 0 0 0 2px rgba(0,0,0,.35);
+}
+.screen canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.screen::after { /* LCD pixel grid */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(0,0,0,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.10) 1px, transparent 1px);
+  background-size: calc(100% / 160) calc(100% / 144);
+}
+.screen.drag { outline: 3px dashed #F2E6A0; outline-offset: -8px; }
+
+.transport { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+.round {
+  width: 46px; height: 46px; border-radius: 50%; border: 0; cursor: pointer; background: var(--berry); color: #fff;
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.25); display: grid; place-items: center;
+}
+.round:disabled { background: #9D97A0; cursor: not-allowed; }
+.round svg { width: 18px; height: 18px; fill: currentColor; }
+input[type="range"] { width: 100%; accent-color: var(--berry); }
+.time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--mute); min-width: 92px; text-align: right; }
+
+.meter { display: grid; gap: 6px; }
+.meter-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+.meter-head b { font-weight: 600; }
+.bar { height: 12px; border-radius: 6px; background: rgba(35,39,90,.12); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.15); }
+.bar > i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: 6px; transition: width .2s; }
+.bar.progress > i { background: var(--berry); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.55); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.chip.warn { color: var(--warn); border-color: rgba(163,87,11,.35); }
+.chip.ok { color: var(--ok); border-color: rgba(46,125,79,.35); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 600; cursor: pointer;
+  background: var(--berry); color: #fff; box-shadow: inset 0 -3px 0 rgba(0,0,0,.22), 0 2px 5px rgba(0,0,0,.18);
+}
+.btn.second { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.note { margin: 0; font-size: 13.5px; color: var(--mute); }
+.note.err { color: #9C1C1C; font-weight: 500; }
+
+/* ---------- settings ---------- */
+.panel { display: grid; gap: 22px; }
+.group { background: var(--card); border-radius: 14px; padding: 18px 20px; display: grid; gap: 14px; border: 1px solid var(--line); }
+.group h2 { margin: 0; font: italic 800 19px/1.2 var(--f-display); font-variation-settings: "wdth" 112; }
+.row { display: grid; grid-template-columns: 150px 1fr; gap: 10px 16px; align-items: center; }
+.row > label, .row > .lbl { font-weight: 500; }
+@media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.seg button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 11px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.seg button:disabled { opacity: .35; cursor: not-allowed; }
+select, input[type="text"], input[type="number"] {
+  border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 10px; width: 100%; max-width: 260px;
+}
+.pair { display: flex; gap: 10px; flex-wrap: wrap; }
+.pair > div { display: grid; gap: 4px; }
+.pair small, .hint { color: var(--mute); font-size: 12.5px; }
+.slider { display: grid; grid-template-columns: 1fr 48px; gap: 10px; align-items: center; max-width: 360px; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; font-size: 13.5px; }
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.switch input { appearance: none; width: 40px; height: 22px; border-radius: 999px; background: #B7B6BD; position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.switch input:checked { background: var(--berry); }
+.switch input:checked::after { left: 21px; }
+@media (prefers-reduced-motion: reduce) { .switch input, .switch input::after, .bar > i { transition: none; } }
+
+.drop {
+  border: 2px dashed rgba(35,39,90,.3); border-radius: 12px; padding: 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  background: #fff;
+}
+.drop.drag { border-color: var(--berry); background: #FBF2F6; }
+.file-meta { display: grid; gap: 2px; min-width: 0; }
+.file-meta b { overflow-wrap: anywhere; }
+.file-meta span { color: var(--mute); font-size: 13.5px; }
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; }
+pre { margin: 10px 0 0; padding: 12px 14px; background: var(--ink); color: #E8E9F5; border-radius: 10px; overflow-x: auto; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+.help { display: grid; gap: 8px; font-size: 14px; color: var(--mute); max-width: 75ch; }
+.help h2 { color: var(--ink); }
+.help p { margin: 0; }
+kbd { font: 600 12px var(--f-body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: #fff; color: var(--ink); }
+.only-dmg, .only-gbc { display: contents; }
+body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body class="dmg">
+<div class="wrap">
+  <header>
+    <div class="mark">
+      <h1>Video Boy</h1>
+      <p>Macht aus deinem Video ein ROM für den Game Boy, mit Bild und Ton. Alles läuft hier im Browser, dein Video wird nirgendwo hochgeladen.</p>
+    </div>
+    <div class="modes" role="group" aria-label="Zielgerät">
+      <button type="button" id="mode-dmg" aria-pressed="true"><span class="swatch dmg"></span>Game Boy</button>
+      <button type="button" id="mode-gbc" aria-pressed="false"><span class="swatch gbc"></span>Game Boy Color</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- ================= console ================= -->
+    <section class="console" aria-label="Vorschau">
+      <div class="bezel">
+        <div class="bezel-top"><span class="led on" id="led"></span><span class="status" id="status">Bereit. Leg ein Video auf den Bildschirm.</span></div>
+        <div class="screen" id="screen"><canvas id="lcd" width="160" height="144" aria-label="Game-Boy-Bildschirm"></canvas></div>
+      </div>
+      <div class="transport">
+        <button class="round" id="play" type="button" aria-label="Abspielen" disabled>
+          <svg viewBox="0 0 24 24" id="play-icon"><path d="M7 4.5v15l13-7.5z"/></svg>
+        </button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" step="1" aria-label="Position" disabled>
+        <span class="time" id="time">0:00 / 0:00</span>
+      </div>
+      <div class="meter">
+        <div class="meter-head"><span id="mem-label">Speicher im ROM</span><b id="mem-value">0 von 8 MB</b></div>
+        <div class="bar" id="mem-bar"><i></i></div>
+      </div>
+      <div class="facts" id="facts"></div>
+      <div class="actions">
+        <button class="btn" id="convert" type="button" disabled>ROM erstellen</button>
+        <button class="btn second hidden" id="cancel" type="button">Abbrechen</button>
+        <button class="btn second" id="download" type="button" disabled>ROM herunterladen</button>
+      </div>
+      <p class="note" id="note">Das ROM spielt hier im Browser genau so ab, wie es der Game Boy zeigen wird.</p>
+    </section>
+
+    <!-- ================= settings ================= -->
+    <div class="panel">
+      <section class="group" aria-labelledby="h-video">
+        <h2 id="h-video">Video</h2>
+        <div class="drop" id="drop">
+          <button class="btn second" type="button" id="pick">Video auswählen</button>
+          <input type="file" id="file" accept="video/*,audio/*,.mkv,.mov,.webm,.mp4,.m4v" class="hidden">
+          <div class="file-meta" id="file-meta"><b>Noch kein Video</b><span>MP4, WebM oder MOV, oder hier ablegen</span></div>
+        </div>
+        <div class="row">
+          <span class="lbl">Ausschnitt</span>
+          <div class="pair">
+            <div><input type="text" id="start" value="0:00" inputmode="numeric" aria-describedby="start-h" style="max-width:110px"><small id="start-h">Start (min:s)</small></div>
+            <div><input type="number" id="dur" min="1" step="1" placeholder="bis Ende" aria-describedby="dur-h" style="max-width:110px"><small id="dur-h">Länge in s</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-pic">
+        <h2 id="h-pic">Bild</h2>
+        <div class="row">
+          <span class="lbl" id="fps-l">Bildrate</span>
+          <div class="seg" id="fps" role="group" aria-labelledby="fps-l"></div>
+        </div>
+        <div class="row">
+          <label for="size">Bildgröße</label>
+          <select id="size"></select>
+        </div>
+        <div class="row">
+          <span class="lbl" id="fit-l">Seitenverhältnis</span>
+          <div class="seg" id="fit" role="group" aria-labelledby="fit-l">
+            <button type="button" data-v="fill" aria-pressed="true">Füllen</button>
+            <button type="button" data-v="fit" aria-pressed="false">Ganzes Bild</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="gamma">Helligkeit</label>
+          <div class="slider"><input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1"><output id="gamma-o">1,00</output></div>
+        </div>
+        <div class="row">
+          <span class="lbl">Feinheiten</span>
+          <div class="pair">
+            <label class="switch"><input type="checkbox" id="dither" checked> Raster-Dithering</label>
+            <span class="only-dmg"><label class="switch"><input type="checkbox" id="contrast" checked> Kontrast automatisch</label></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-comp">
+        <h2 id="h-comp">Kompression</h2>
+        <div class="row">
+          <span class="lbl">Mehr Video pro ROM</span>
+          <label class="switch"><input type="checkbox" id="compress"> Nur geänderte Bildteile speichern</label>
+        </div>
+        <div class="row">
+          <label for="tol">Toleranz</label>
+          <div>
+            <div class="slider"><input type="range" id="tol" min="0" max="8" step="1" value="2"><output id="tol-o">2</output></div>
+            <span class="hint">Pixel pro 8×8-Kachel, die abweichen dürfen. 0 ist verlustfrei, höher bringt mehr Länge.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-snd">
+        <h2 id="h-snd">Ton</h2>
+        <div class="row">
+          <span class="lbl">Ton</span>
+          <label class="switch"><input type="checkbox" id="sound" checked> <span id="snd-desc">9198 Hz, 3 Bit</span></label>
+        </div>
+        <div class="row">
+          <span class="lbl" id="ch-l">Kanäle</span>
+          <div class="seg" id="chan" role="group" aria-labelledby="ch-l">
+            <button type="button" data-v="stereo" aria-pressed="true">Stereo</button>
+            <button type="button" data-v="mono" aria-pressed="false">Mono</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="vol">Lautstärke</label>
+          <div class="slider"><input type="range" id="vol" min="0.5" max="2" step="0.05" value="1"><output id="vol-o">1,00</output></div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-rom">
+        <h2 id="h-rom">ROM</h2>
+        <div class="row">
+          <label for="title">Titel</label>
+          <input type="text" id="title" maxlength="15" placeholder="VIDEOBOY">
+        </div>
+        <details>
+          <summary>Befehl für die Kommandozeile</summary>
+          <pre id="cli"></pre>
+          <button class="btn second" type="button" id="copy-cli" style="margin-top:10px">Befehl kopieren</button>
+        </details>
+      </section>
+
+      <section class="help" aria-labelledby="h-help">
+        <h2 id="h-help" style="margin:0;font:italic 800 19px/1.2 var(--f-display);font-variation-settings:'wdth' 112">Auf den Game Boy bringen</h2>
+        <p>Kopiere das ROM auf ein Flashcart mit MBC5-Unterstützung, zum Beispiel EverDrive GB, EZ-Flash Junior oder ein 8-MB-Repro-Flashcart. Game-Boy-ROMs laufen auf Game Boy, Pocket, Color und Advance, Game-Boy-Color-ROMs auf Color und Advance.</p>
+        <p>Am Gerät: <kbd>START</kbd> pausiert, <kbd>SELECT</kbd> startet von vorne. Lass diesen Tab während der Umwandlung offen, im Hintergrund bremst der Browser das Abspielen.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" id="engine-src">// VIDEO BOY engine: video frames + audio -> Game Boy / Game Boy Color ROM.
+// Port of videoboy.py. Runs in a Web Worker and in Node (no DOM).
+const VB = (() => {
+  "use strict";
+  const CPU_HZ = 4194304, FRAME_CYCLES = 70224, LCD_FPS = CPU_HZ / FRAME_CYCLES, LINES = 154;
+  const BANK = 16384, MAX_BANKS = 512, SILENCE = 0x44;
+  const DMG_RATE = 9198, GBC_RATE = 18396;
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const MAX_TILES = 191, CHUNKS_PER_LCD_FRAME = 160, RUN_MAX = 127, SLOTS_Z = 152;
+  const GBC_SPLIT = 232, GBC_BORDER = 232;
+  const LUM = [0.3, 0.59, 0.11];
+
+  // ---------------------------------------------------------------- helpers
+  function b64(s) {
+    if (typeof atob === "function") { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+    return new Uint8Array(Buffer.from(s, "base64"));
+  }
+  function rint(x) { // numpy rint: round half to even
+    const f = Math.floor(x), d = x - f;
+    if (d > 0.5) return f + 1;
+    if (d < 0.5) return f;
+    return (f % 2 === 0) ? f : f + 1;
+  }
+  function percentile(arr, q) { // numpy default (linear)
+    const a = Float64Array.from(arr).sort();
+    if (!a.length) return 0;
+    const pos = (a.length - 1) * q / 100, lo = Math.floor(pos), hi = Math.ceil(pos);
+    return a[lo] + (a[hi] - a[lo]) * (pos - lo);
+  }
+  class ByteBuf {
+    constructor(cap = 1 << 20) { this.a = new Uint8Array(cap); this.n = 0; }
+    ensure(k) { if (this.n + k > this.a.length) { let c = this.a.length * 2; while (c < this.n + k) c *= 2; const b = new Uint8Array(c); b.set(this.a.subarray(0, this.n)); this.a = b; } }
+    push(x) { this.ensure(1); this.a[this.n++] = x; }
+    put(u) { this.ensure(u.length); this.a.set(u, this.n); this.n += u.length; }
+    fill(v, k) { this.ensure(k); this.a.fill(v, this.n, this.n + k); this.n += k; }
+    bytes() { return this.a.subarray(0, this.n); }
+  }
+
+  // ---------------------------------------------------------------- layouts
+  function chooseLayoutDMG(aspect, n, limit) {
+    if (limit == null) limit = Math.min(MAX_TILES, Math.floor(CHUNKS_PER_LCD_FRAME * n / 2));
+    let best = null;
+    for (let th = 1; th <= 18; th++) for (let tw = 1; tw <= 20; tw++) {
+      if (tw * th > limit) continue;
+      const err = Math.abs(Math.log((tw / th) / aspect));
+      if (err > 0.12) continue;
+      if (!best || tw * th > best.a || (tw * th === best.a && err < best.err)) best = { a: tw * th, err, tw, th };
+    }
+    return best ? [best.tw, best.th] : [Math.min(20, limit), 1];
+  }
+  function zMaxTiles(n) { const cap = SLOTS_Z * n; let t = MAX_TILES; while (2 * t + Math.ceil(t / RUN_MAX) + 1 > cap) t--; return t; }
+  function gbcCap(n) { return 163 * n - 5; }
+  function gbcFullSlots(tw, th) { const t = tw * th; return t + 2 * th + 1 + (t > 0 ? 1 : 0) + (t > GBC_SPLIT ? 1 : 0) + 1; }
+  function chooseLayoutGBC(aspect, n) {
+    const cap = gbcCap(n);
+    let best = null;
+    for (let th = 1; th <= 18; th++) for (let tw = 1; tw <= 20; tw++) {
+      if (gbcFullSlots(tw, th) > cap) continue;
+      const err = Math.abs(Math.log((tw / th) / aspect));
+      if (err > 0.12) continue;
+      if (!best || tw * th > best.a || (tw * th === best.a && err < best.err)) best = { a: tw * th, err, tw, th };
+    }
+    return best ? [best.tw, best.th] : [20, 1];
+  }
+  // fixed-size checks for a user-given size
+  function sizeOK(mode, compress, tw, th, n) {
+    const T = tw * th;
+    if (mode === "gbc") return gbcFullSlots(tw, th) <= gbcCap(n);
+    if (compress) return T <= zMaxTiles(n);
+    return T <= MAX_TILES && T * 2 <= CHUNKS_PER_LCD_FRAME * n;
+  }
+
+  // ---------------------------------------------------------------- audio
+  // window sum like np.convolve(x, ones(w)/w, "same")
+  function boxSame(x, w) {
+    const N = x.length, out = new Float64Array(N), ps = new Float64Array(N + 1);
+    for (let i = 0; i < N; i++) ps[i + 1] = ps[i] + x[i];
+    const a = Math.floor(w / 2), b = Math.floor((w - 1) / 2);
+    for (let i = 0; i < N; i++) {
+      const lo = Math.max(0, i - a), hi = Math.min(N - 1, i + b);
+      out[i] = (ps[hi + 1] - ps[lo]) / w;
+    }
+    return out;
+  }
+  function quantizeChannel(ch, rate, shape, gate = 0.03) {
+    const N = ch.length, w = Math.floor(rate / 50), k = Math.floor(rate * 0.06);
+    const ab = new Float64Array(N); for (let i = 0; i < N; i++) ab[i] = Math.abs(ch[i]);
+    const env = boxSame(ab, w);
+    const sil = new Float64Array(N); for (let i = 0; i < N; i++) sil[i] = env[i] < gate ? 1 : 0;
+    const glide = boxSame(sil, k);
+    const out = new Uint8Array(N);
+    let e = 0;
+    for (let i = 0; i < N; i++) {
+      if (sil[i]) { out[i] = 4; e = 0; continue; }
+      const c = Math.max(-1, Math.min(1, ch[i]));
+      const v = (3.5 + 0.5 * glide[i] + c * 4.0) - shape * e;
+      let q = v > -0.5 ? Math.floor(v + 0.5) : 0;
+      if (q > 7) q = 7;
+      e = v - q;
+      if (e > 1) e = 1; else if (e < -1) e = -1;
+      out[i] = q;
+    }
+    return out;
+  }
+  // L, R: Float32Array (already filtered, at the target rate)
+  function quantizeAudio(L, R, gain, rate, shape = 0.3) {
+    const N = L.length;
+    if (!N) return new Uint8Array(0);
+    const ab = new Float32Array(2 * N);
+    for (let i = 0; i < N; i++) { ab[2 * i] = Math.abs(L[i]); ab[2 * i + 1] = Math.abs(R[i]); }
+    // 99.5th percentile via sampling for long inputs (exact for short ones)
+    let peak;
+    if (ab.length <= 4e6) peak = percentile(ab, 99.5);
+    else { const s = new Float32Array(4e6); const st = ab.length / 4e6; for (let i = 0; i < 4e6; i++) s[i] = ab[Math.floor(i * st)]; peak = percentile(s, 99.5); }
+    if (peak < 1e-4) return new Uint8Array(N).fill(SILENCE);
+    const t11 = Math.tanh(1.1);
+    const y = (x) => { const o = new Float64Array(N); for (let i = 0; i < N; i++) o[i] = Math.tanh(x[i] / peak * 1.1 * gain) / t11; return o; };
+    const l = quantizeChannel(y(L), rate, shape), r = quantizeChannel(y(R), rate, shape);
+    const out = new Uint8Array(N);
+    for (let i = 0; i < N; i++) out[i] = (l[i] << 4) | r[i];
+    return out;
+  }
+  function audioSlice(audio, k, len) { // audio of packet k (= audio while frame k-1 is shown)
+    const a = new Uint8Array(len).fill(SILENCE);
+    if (k > 0 && audio) { const s = (k - 1) * len; if (s < audio.length) a.set(audio.subarray(s, Math.min(audio.length, s + len))); }
+    return a;
+  }
+
+  // ---------------------------------------------------------------- DMG picture
+  function dmgIndices(gray, W, H, lo, hi, gamma, dither) {
+    const out = new Uint8Array(W * H);
+    const useC = hi - lo > 0.05;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let f = gray[y * W + x] / 255;
+      if (useC) f = Math.min(1, Math.max(0, (f - lo) / (hi - lo)));
+      if (gamma !== 1) f = Math.pow(f, gamma);
+      let v = f * 3;
+      if (dither) v += (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5;
+      const l = Math.min(3, Math.max(0, rint(v)));
+      out[y * W + x] = 3 - l;
+    }
+    return out;
+  }
+  function tilesFromIdx(idx, tw, th) { // row-major tiles -> 2bpp
+    const W = tw * 8, out = new Uint8Array(tw * th * 16);
+    let o = 0;
+    for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) for (let r = 0; r < 8; r++) {
+      let lo = 0, hi = 0;
+      const base = (ty * 8 + r) * W + tx * 8;
+      for (let c = 0; c < 8; c++) { const v = idx[base + c]; lo |= (v & 1) << (7 - c); hi |= ((v >> 1) & 1) << (7 - c); }
+      out[o++] = lo; out[o++] = hi;
+    }
+    return out;
+  }
+  function tilePixels(idx, tw, th) { // (T,64)
+    const W = tw * 8, T = tw * th, out = new Uint8Array(T * 64);
+    for (let t = 0; t < T; t++) { const tx = t % tw, ty = (t / tw) | 0; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) out[t * 64 + r * 8 + c] = idx[(ty * 8 + r) * W + tx * 8 + c]; }
+    return out;
+  }
+
+  // ---------------------------------------------------------------- ROM finalize
+  function finalize(playerB64, cfg, cfgAddr, maps, mapsAddr, data, nbanks, title, gbc) {
+    const p = b64(playerB64);
+    const bank0 = new Uint8Array(BANK); bank0.set(p);
+    if (!gbc) bank0.fill(191, 0x3000, 0x3800); // DMG default maps
+    bank0.set(cfg, cfgAddr); bank0.set(maps, mapsAddr);
+    let code = 0; while ((2 << code) < 1 + nbanks) code++;
+    const rom = new Uint8Array((2 << code) * BANK).fill(0xFF);
+    rom.set(bank0, 0); rom.set(data, BANK);
+    const t = String(title || "VIDEOBOY").toUpperCase().replace(/[^\x20-\x5F]/g, "?").slice(0, gbc ? 11 : 15);
+    for (let i = 0; i < 16; i++) rom[0x134 + i] = 0;
+    if (gbc) for (let i = 0; i < 15; i++) rom[0x134 + i] = 0;
+    for (let i = 0; i < t.length; i++) rom[0x134 + i] = t.charCodeAt(i);
+    rom[0x143] = gbc ? 0xC0 : 0x00; rom[0x147] = 0x19; rom[0x148] = code; rom[0x149] = 0;
+    let c = 0; for (let i = 0x134; i < 0x14D; i++) c = (c - rom[i] - 1) & 0xFF;
+    rom[0x14D] = c; rom[0x14E] = rom[0x14F] = 0;
+    let g = 0; for (let i = 0; i < rom.length; i++) g = (g + rom[i]) & 0xFFFF;
+    rom[0x14E] = g >> 8; rom[0x14F] = g & 0xFF;
+    return rom;
+  }
+  function u16(v) { return [v & 255, (v >> 8) & 255]; }
+  function scrollFix(tw, th) { return [(-4 * (tw % 2)) & 255, (-4 * (th % 2)) & 255]; }
+  function dmgMaps(tw, th) {
+    const x0 = (20 - tw) >> 1, y0 = (18 - th) >> 1, m = new Uint8Array(2048).fill(191);
+    for (let i = 0; i < tw * th; i++) { const y = y0 + ((i / tw) | 0), x = x0 + i % tw; m[y * 32 + x] = i; m[1024 + y * 32 + x] = (192 + i) & 255; }
+    return m;
+  }
+
+  // Bank placement with exact fit (same rules as the players)
+  class Placer {
+    constructor(maxBanks = MAX_BANKS) { this.buf = new ByteBuf(); this.lastEnd = -1; this.limit = (maxBanks - 1) * BANK; }
+    posAfter(pos, len) { return pos + ((pos % BANK) && (pos % BANK) + len > BANK ? BANK - pos % BANK : 0) + len; }
+    fits(len, tailLen) { const p = this.posAfter(this.buf.n, len); return this.posAfter(p, tailLen) <= this.limit; }
+    add(p) {
+      const b = this.buf;
+      if (b.n && b.n % BANK === 0) b.a[this.lastEnd] = 0xFF;
+      else if (b.n % BANK + p.length > BANK) { b.a[this.lastEnd] = 0xFF; b.fill(0xFF, BANK - b.n % BANK); }
+      b.put(p); this.lastEnd = b.n - 1;
+    }
+    finish() { const nb = Math.ceil(this.buf.n / BANK); this.buf.fill(0xFF, nb * BANK - this.buf.n); return [this.buf.bytes(), nb]; }
+  }
+
+  // ---------------------------------------------------------------- DMG normal
+  class DmgNormal {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, players
+      this.T = this.tw * this.th; this.aud = LINES * this.n; this.pkt = this.aud + this.T * 16;
+      this.ppb = Math.floor(BANK / this.pkt); this.maxFrames = (MAX_BANKS - 1) * this.ppb - 1;
+      this.tiles = []; this.full = false;
+    }
+    add(idx) {
+      if (this.tiles.length >= this.maxFrames) { this.full = true; return null; }
+      const t = tilesFromIdx(idx, this.tw, this.th); this.tiles.push(t);
+      const k = this.tiles.length - 1, p = new Uint8Array(this.pkt);
+      p.set(audioSlice(this.audio, k, this.aud)); p.set(t, this.aud);
+      return p;
+    }
+    finish() {
+      const F = this.tiles.length, npk = F + 1, nb = Math.ceil(npk / this.ppb);
+      const data = new Uint8Array(nb * BANK);
+      for (let k = 0; k < npk; k++) {
+        const off = Math.floor(k / this.ppb) * BANK + (k % this.ppb) * this.pkt;
+        data.set(audioSlice(this.audio, k, this.aud), off);
+        if (k < F) data.set(this.tiles[k], off + this.aud);
+      }
+      const cfg = [this.n, ...u16(this.aud), ...u16(this.T * 2), ...u16(this.pkt), this.ppb, ...u16(npk), ...scrollFix(this.tw, this.th)];
+      return finalize(this.players.dmg, cfg, 0x2F00, dmgMaps(this.tw, this.th), 0x3000, data, nb, this.title, false);
+    }
+  }
+
+  // ---------------------------------------------------------------- DMG compressed
+  function zRuns(changed) {
+    const runs = [];
+    for (const i of changed) {
+      const r = runs[runs.length - 1];
+      if (r && r[0] + r[1] === i && r[1] < RUN_MAX) r[1]++; else runs.push([i, 1]);
+    }
+    return runs;
+  }
+  class DmgZ {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, tol, players
+      this.T = this.tw * this.th; this.aud = LINES * this.n; this.cap = SLOTS_Z * this.n;
+      this.buf = [null, null]; this.placer = new Placer(); this.k = 0; this.sent = 0; this.full = false;
+    }
+    add(idx) {
+      if (this.full) return null;
+      const T = this.T, pix = tilePixels(idx, this.tw, this.th), tiles = tilesFromIdx(idx, this.tw, this.th);
+      const b = this.k & 1;
+      let changed;
+      if (!this.buf[b]) { changed = [...Array(T).keys()]; this.buf[b] = pix.slice(); }
+      else {
+        changed = [];
+        for (let t = 0; t < T; t++) { let d = 0; for (let i = 0; i < 64; i++) if (this.buf[b][t * 64 + i] !== pix[t * 64 + i]) d++; if (d > this.tol) changed.push(t); }
+        if (2 * changed.length + zRuns(changed).length + 1 > this.cap) changed = [...Array(T).keys()];
+        for (const t of changed) this.buf[b].set(pix.subarray(t * 64, t * 64 + 64), t * 64);
+      }
+      const p = new ByteBuf(this.aud + T * 16 + 512);
+      p.put(audioSlice(this.audio, this.k, this.aud));
+      for (const [st, ln] of zRuns(changed)) { const off = st * 16; p.push(ln * 2); p.push(off & 255); p.push(off >> 8); p.put(tiles.subarray(st * 16, (st + ln) * 16)); }
+      p.push(0);
+      const bytes = p.bytes();
+      if (!this.placer.fits(bytes.length, this.aud + 1)) { this.full = true; return null; }
+      this.placer.add(bytes); this.sent += changed.length; this.k++;
+      return bytes;
+    }
+    finish() {
+      const F = this.k, tail = new Uint8Array(this.aud + 1);
+      tail.set(audioSlice(this.audio, F, this.aud)); tail[this.aud] = 0;
+      this.placer.add(tail);
+      const [data, nb] = this.placer.finish();
+      const cfg = [this.n, ...u16(this.aud), ...u16(this.T * 2), 0, 0, 1, ...u16(F + 1), ...scrollFix(this.tw, this.th), 1];
+      return finalize(this.players.dmg, cfg, 0x2F00, dmgMaps(this.tw, this.th), 0x3000, data, nb, this.title, false);
+    }
+  }
+
+  // ---------------------------------------------------------------- GBC
+  function gbcTileLoc(t, b) {
+    if (b === 0) return t < GBC_SPLIT ? [0, 0x8000 + 16 * t, t] : [1, 0x8000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT];
+    return t < GBC_SPLIT ? [1, 0x8980 + 16 * t, (152 + t) & 255] : [0, 0x9000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT];
+  }
+  function gbcMaps(tw, th) {
+    const x0 = (20 - tw) >> 1, y0 = (18 - th) >> 1, m = new Uint8Array(4096);
+    m.fill(GBC_BORDER, 0, 2048);
+    for (let b = 0; b < 2; b++) for (let t = 0; t < tw * th; t++) {
+      const [bank, , ix] = gbcTileLoc(t, b), pos = (y0 + ((t / tw) | 0)) * 32 + x0 + t % tw;
+      m[b * 1024 + pos] = ix; m[2048 + b * 1024 + pos] = bank << 3;
+    }
+    return m;
+  }
+  class GbcQuantizer {
+    constructor(tw, th, dither, border, gamma) {
+      Object.assign(this, { tw, th, dither, border, gamma });
+      this.T = tw * th; this.prev = null; this.prevErr = null; this.count = 0;
+      this.thr = new Float64Array(64); for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) this.thr[y * 8 + x] = (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+      this.lut = new Float64Array(256); for (let i = 0; i < 256; i++) this.lut[i] = Math.pow(i / 255, gamma) * 31;
+      this.X = new Float64Array(this.T * 192);
+    }
+    tiles(rgba) { // RGBA (W*H*4) -> X (T,64,3)
+      const W = this.tw * 8, X = this.X, lut = this.lut;
+      for (let t = 0; t < this.T; t++) { const tx = t % this.tw, ty = (t / this.tw) | 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const s = ((ty * 8 + r) * W + tx * 8 + c) * 4, d = (t * 64 + r * 8 + c) * 3; X[d] = lut[rgba[s]]; X[d + 1] = lut[rgba[s + 1]]; X[d + 2] = lut[rgba[s + 2]]; } }
+      return X;
+    }
+    tileErr(X, P) { // (T,8)
+      const T = this.T, E = new Float64Array(T * 8);
+      for (let t = 0; t < T; t++) for (let p = 0; p < 8; p++) {
+        let s = 0; const pb = p * 12;
+        for (let i = 0; i < 64; i++) {
+          const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], b = X[o + 2];
+          let m = Infinity;
+          for (let c = 0; c < 4; c++) { const q = pb + c * 3, dr = r - P[q], dg = g - P[q + 1], db = b - P[q + 2], d = dr * dr + dg * dg + db * db; if (d < m) m = d; }
+          s += m;
+        }
+        E[t * 8 + p] = s;
+      }
+      return E;
+    }
+    assign(X, P) {
+      const E = this.tileErr(X, P), a = new Uint8Array(this.T); let tot = 0;
+      for (let t = 0; t < this.T; t++) { let bp = 0, bv = E[t * 8]; for (let p = 1; p < 8; p++) if (E[t * 8 + p] < bv) { bv = E[t * 8 + p]; bp = p; } a[t] = bp; tot += bv; }
+      return [a, tot, E];
+    }
+    fix(P) { const Q = new Float64Array(96); for (let i = 0; i < 96; i++) Q[i] = Math.min(31, Math.max(0, rint(P[i]))); if (this.border) Q[0] = Q[1] = Q[2] = 0; return Q; }
+    members(X, a, p) { const idx = []; for (let t = 0; t < this.T; t++) if (a[t] === p) idx.push(t); return idx; }
+    refine(X, P, a, iters = 2) {
+      P = Float64Array.from(P);
+      for (let p = 0; p < 8; p++) {
+        const mem = this.members(X, a, p); if (!mem.length) continue;
+        const n = mem.length * 64, lab = new Uint8Array(n);
+        for (let it = 0; it < iters; it++) {
+          const sum = new Float64Array(12), cnt = new Float64Array(4);
+          let j = 0;
+          for (const t of mem) for (let i = 0; i < 64; i++, j++) {
+            const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], b = X[o + 2];
+            let bc = 0, bd = Infinity;
+            for (let c = 0; c < 4; c++) { const q = p * 12 + c * 3, d = (r - P[q]) ** 2 + (g - P[q + 1]) ** 2 + (b - P[q + 2]) ** 2; if (d < bd) { bd = d; bc = c; } }
+            lab[j] = bc; sum[bc * 3] += r; sum[bc * 3 + 1] += g; sum[bc * 3 + 2] += b; cnt[bc]++;
+          }
+          for (let c = 0; c < 4; c++) if (cnt[c]) { P[p * 12 + c * 3] = sum[c * 3] / cnt[c]; P[p * 12 + c * 3 + 1] = sum[c * 3 + 1] / cnt[c]; P[p * 12 + c * 3 + 2] = sum[c * 3 + 2] / cnt[c]; }
+        }
+      }
+      return P;
+    }
+    pixLum(X, t, i) { const o = (t * 64 + i) * 3; return X[o] * LUM[0] + X[o + 1] * LUM[1] + X[o + 2] * LUM[2]; }
+    quantilesInto(P, p, X, tilesList) {
+      const px = []; for (const t of tilesList) for (let i = 0; i < 64; i++) px.push([this.pixLum(X, t, i), t, i]);
+      px.sort((u, v) => u[0] - v[0]);
+      for (let c = 0; c < 4; c++) { const e = px[Math.min(px.length - 1, Math.floor((c + 0.5) / 4 * px.length))], o = (e[1] * 64 + e[2]) * 3; P[p * 12 + c * 3] = X[o]; P[p * 12 + c * 3 + 1] = X[o + 1]; P[p * 12 + c * 3 + 2] = X[o + 2]; }
+    }
+    cold(X) {
+      const T = this.T, means = new Float64Array(T * 3);
+      for (let t = 0; t < T; t++) for (let i = 0; i < 64; i++) for (let k = 0; k < 3; k++) means[t * 3 + k] += X[(t * 64 + i) * 3 + k] / 64;
+      const lum = Array.from({ length: T }, (_, t) => means[t * 3] * LUM[0] + means[t * 3 + 1] * LUM[1] + means[t * 3 + 2] * LUM[2]);
+      const order = [...Array(T).keys()].sort((u, v) => lum[u] - lum[v] || u - v);
+      const cent = new Float64Array(24);
+      for (let k = 0; k < 8; k++) { const t = order[Math.floor(k * (T - 1) / 7)]; cent.set(means.subarray(t * 3, t * 3 + 3), k * 3); }
+      let lab = new Uint8Array(T);
+      for (let it = 0; it < 6; it++) {
+        for (let t = 0; t < T; t++) { let bk = 0, bd = Infinity; for (let k = 0; k < 8; k++) { const d = (means[t * 3] - cent[k * 3]) ** 2 + (means[t * 3 + 1] - cent[k * 3 + 1]) ** 2 + (means[t * 3 + 2] - cent[k * 3 + 2]) ** 2; if (d < bd) { bd = d; bk = k; } } lab[t] = bk; }
+        for (let k = 0; k < 8; k++) { let s0 = 0, s1 = 0, s2 = 0, c = 0; for (let t = 0; t < T; t++) if (lab[t] === k) { s0 += means[t * 3]; s1 += means[t * 3 + 1]; s2 += means[t * 3 + 2]; c++; } if (c) { cent[k * 3] = s0 / c; cent[k * 3 + 1] = s1 / c; cent[k * 3 + 2] = s2 / c; } }
+      }
+      for (let t = 0; t < T; t++) { let bk = 0, bd = Infinity; for (let k = 0; k < 8; k++) { const d = (means[t * 3] - cent[k * 3]) ** 2 + (means[t * 3 + 1] - cent[k * 3 + 1]) ** 2 + (means[t * 3 + 2] - cent[k * 3 + 2]) ** 2; if (d < bd) { bd = d; bk = k; } } lab[t] = bk; }
+      let P = new Float64Array(96);
+      for (let k = 0; k < 8; k++) { const mem = this.members(X, lab, k); this.quantilesInto(P, k, X, mem.length ? mem : [order[Math.floor(k * T / 8)]]); }
+      let [a] = this.assign(X, P);
+      for (let r = 0; r < 3; r++) { P = this.refine(X, P, a, 2); [a] = this.assign(X, P); }
+      return P;
+    }
+    reseedEmpty(X, P, a) {
+      const used = new Array(8).fill(0); for (let t = 0; t < this.T; t++) used[a[t]]++;
+      if (Math.min(...used) > 0) return P;
+      const E = this.tileErr(X, P), d = Array.from({ length: this.T }, (_, t) => E[t * 8 + a[t]]);
+      const worst = [...Array(this.T).keys()].sort((u, v) => d[v] - d[u]);
+      let j = 0;
+      for (let p = 0; p < 8; p++) if (!used[p]) { const t = worst[j++ % worst.length]; this.quantilesInto(P, p, X, [t]); }
+      return P;
+    }
+    quantize(rgba) {
+      const X = this.tiles(rgba), cands = [];
+      let scene = true;
+      if (this.prev) {
+        let [a, e] = this.assign(X, this.prev);
+        cands.push([e * 0.92, this.prev]);
+        let Pw = Float64Array.from(this.prev);
+        for (let i = 0; i < 2; i++) { Pw = this.reseedEmpty(X, Pw, a); Pw = this.fix(this.refine(X, Pw, a, 2)); [a, e] = this.assign(X, Pw); }
+        cands.push([e, Pw]);
+        scene = this.prevErr != null && e > 1.6 * this.prevErr + 1;
+      }
+      if (scene || this.count % 48 === 0) { const Pc = this.fix(this.cold(X)); const [, e] = this.assign(X, Pc); cands.push([e, Pc]); }
+      let best = cands[0]; for (const c of cands) if (c[0] < best[0]) best = c;
+      const P = this.fix(best[1]);
+      const [a, err] = this.assign(X, P);
+      this.prev = P; this.prevErr = err; this.count++;
+      // colour index per pixel: ordered dithering between the two closest colours
+      const T = this.T, idx = new Uint8Array(T * 64);
+      for (let t = 0; t < T; t++) { const pb = a[t] * 12;
+        for (let i = 0; i < 64; i++) {
+          const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], bl = X[o + 2];
+          let c1 = -1, d1 = Infinity, c2 = -1, d2 = Infinity;
+          for (let c = 0; c < 4; c++) { const q = pb + c * 3, d = (r - P[q]) ** 2 + (g - P[q + 1]) ** 2 + (bl - P[q + 2]) ** 2;
+            if (d < d1) { c2 = c1; d2 = d1; c1 = c; d1 = d; } else if (d < d2) { c2 = c; d2 = d; } }
+          if (!this.dither) { idx[t * 64 + i] = c1; continue; }
+          const A = pb + c1 * 3, B = pb + c2 * 3, v0 = P[B] - P[A], v1 = P[B + 1] - P[A + 1], v2 = P[B + 2] - P[A + 2];
+          const tt = ((r - P[A]) * v0 + (g - P[A + 1]) * v1 + (bl - P[A + 2]) * v2) / Math.max(v0 * v0 + v1 * v1 + v2 * v2, 1e-9);
+          idx[t * 64 + i] = tt > this.thr[i] ? c2 : c1;
+        } }
+      const Pi = new Uint8Array(96); for (let i = 0; i < 96; i++) Pi[i] = P[i];
+      return [Pi, a, idx];
+    }
+  }
+  function gbcTileBytes(idx, T) { // (T,64) -> (T,16)
+    const out = new Uint8Array(T * 16);
+    for (let t = 0; t < T; t++) for (let r = 0; r < 8; r++) { let lo = 0, hi = 0; for (let c = 0; c < 8; c++) { const v = idx[t * 64 + r * 8 + c]; lo |= (v & 1) << (7 - c); hi |= ((v >> 1) & 1) << (7 - c); } out[t * 16 + r * 2] = lo; out[t * 16 + r * 2 + 1] = hi; }
+    return out;
+  }
+  function gbcPalBytes(P) { const o = new Uint8Array(64); for (let i = 0; i < 32; i++) { const v = P[i * 3] | (P[i * 3 + 1] << 5) | (P[i * 3 + 2] << 10); o[i * 2] = v & 255; o[i * 2 + 1] = v >> 8; } return o; }
+  class Gbc {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, compress, tol, dither, gamma, players
+      this.T = this.tw * this.th; this.aud = 2 * LINES * this.n; this.cap = gbcCap(this.n);
+      this.x0 = (20 - this.tw) >> 1; this.y0 = (18 - this.th) >> 1;
+      this.q = new GbcQuantizer(this.tw, this.th, this.dither, this.tw < 20 || this.th < 18, this.gamma);
+      this.bufPal = [null, null]; this.bufIdx = [null, null];
+      this.locs = [0, 1].map(b => Array.from({ length: this.T }, (_, t) => gbcTileLoc(t, b)));
+      this.placer = new Placer(); this.k = 0; this.sent = 0; this.full = false; this.lastP = null;
+    }
+    attrChunks(b, pal, rows) {
+      const base = b === 0 ? 0x9800 : 0x9C00, out = [];
+      for (const r of rows) {
+        const row = new Uint8Array(32);
+        for (let tx = 0; tx < this.tw; tx++) { const t = r * this.tw + tx; row[this.x0 + tx] = (this.locs[b][t][0] << 3) | pal[t]; }
+        const addr = base + (this.y0 + r) * 32;
+        out.push([1, addr, row.subarray(0, 16)], [1, addr + 16, row.subarray(16)]);
+      }
+      return out;
+    }
+    static runs(chunks) {
+      const s = chunks.slice().sort((u, v) => u[0] - v[0] || u[1] - v[1]), runs = [];
+      for (const [bank, addr, data] of s) {
+        const r = runs[runs.length - 1];
+        if (r && r.bank === bank && r.addr + r.len === addr && r.len < 254 * 16) { r.parts.push(data); r.len += 16; }
+        else runs.push({ bank, addr, len: 16, parts: [data] });
+      }
+      return runs;
+    }
+    add(rgba) {
+      if (this.full) return null;
+      const [P, pal, idx] = this.q.quantize(rgba);
+      const tiles = gbcTileBytes(idx, this.T), T = this.T, b = this.k & 1;
+      let full = !this.compress || !this.bufIdx[b], chunks, npal, nidx, nchanged;
+      if (!full) {
+        const bp = this.bufPal[b], bi = this.bufIdx[b], thr = this.tol === 0 ? 0 : 2, changed = [];
+        for (let t = 0; t < T; t++) {
+          let cnt = 0;
+          for (let i = 0; i < 64; i++) {
+            const o = (bp[t] * 4 + bi[t * 64 + i]) * 3, n = (pal[t] * 4 + idx[t * 64 + i]) * 3;
+            const d = Math.max(Math.abs(P[o] - P[n]), Math.abs(P[o + 1] - P[n + 1]), Math.abs(P[o + 2] - P[n + 2]));
+            if (d > thr) cnt++;
+          }
+          if (cnt > this.tol) changed.push(t);
+        }
+        npal = bp.slice(); nidx = bi.slice();
+        for (const t of changed) { npal[t] = pal[t]; nidx.set(idx.subarray(t * 64, t * 64 + 64), t * 64); }
+        const rows = [...new Set(changed.map(t => (t / this.tw) | 0))].sort((u, v) => u - v);
+        const oa = this.attrChunks(b, bp, rows), na = this.attrChunks(b, npal, rows);
+        const att = na.filter((c, i) => { const o = oa[i][2]; for (let j = 0; j < 16; j++) if (o[j] !== c[2][j]) return true; return false; });
+        chunks = changed.map(t => [this.locs[b][t][0], this.locs[b][t][1], tiles.subarray(t * 16, t * 16 + 16)]).concat(att);
+        nchanged = changed.length;
+        if (chunks.length + Gbc.runs(chunks).length + 1 > this.cap) full = true;
+      }
+      if (full) {
+        npal = pal.slice(); nidx = idx.slice(); nchanged = T;
+        chunks = Array.from({ length: T }, (_, t) => [this.locs[b][t][0], this.locs[b][t][1], tiles.subarray(t * 16, t * 16 + 16)])
+          .concat(this.attrChunks(b, npal, [...Array(this.th).keys()]));
+      }
+      const p = new ByteBuf(this.aud + 64 + chunks.length * 16 + 64);
+      p.put(audioSlice(this.audio, this.k, this.aud)); p.put(gbcPalBytes(P));
+      for (const r of Gbc.runs(chunks)) { p.push(r.len / 16); p.push(r.addr & 255); p.push((r.addr >> 8) | (r.bank << 6)); for (const d of r.parts) p.put(d); }
+      p.push(0);
+      const bytes = p.bytes();
+      if (!this.placer.fits(bytes.length, this.aud + 65)) { this.full = true; return null; }
+      this.placer.add(bytes);
+      this.bufPal[b] = npal; this.bufIdx[b] = nidx; this.sent += nchanged; this.k++; this.lastP = P;
+      return bytes;
+    }
+    finish() {
+      const F = this.k, tail = new Uint8Array(this.aud + 65);
+      tail.set(audioSlice(this.audio, F, this.aud)); tail.set(gbcPalBytes(this.lastP || new Uint8Array(96)), this.aud); tail[this.aud + 64] = 0;
+      this.placer.add(tail);
+      const [data, nb] = this.placer.finish();
+      const cfg = [this.n, ...u16(this.aud), ...scrollFix(this.tw, this.th), ...u16(F + 1)];
+      return finalize(this.players.gbc, cfg, 0x2F00, gbcMaps(this.tw, this.th), 0x3000, data, nb, this.title, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- ROM reader (preview playback)
+  // Decodes a finished ROM exactly like the player does: returns packets with audio + a render function.
+  class RomReader {
+    constructor(rom) {
+      this.rom = rom;
+      this.gbc = rom[0x143] === 0xC0;
+      const c = rom.subarray(0x2F00, 0x2F10);
+      if (this.gbc) {
+        this.n = c[0]; this.aud = c[1] | c[2] << 8; this.scx = c[3]; this.scy = c[4]; this.npk = c[5] | c[6] << 8; this.mode = "gbc";
+      } else {
+        this.n = c[0]; this.aud = c[1] | c[2] << 8; this.T = (c[3] | c[4] << 8) / 2; this.pkt = c[5] | c[6] << 8; this.ppb = c[7];
+        this.npk = c[8] | c[9] << 8; this.scx = c[10]; this.scy = c[11]; this.mode = c[12] ? "z" : "normal";
+        const m = rom.subarray(0x3000, 0x3400); let x0 = 32, y0 = 32, x1 = -1, y1 = -1;
+        for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (m[y * 32 + x] !== 191) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+        this.tw = x1 - x0 + 1; this.th = y1 - y0 + 1; this.mx = x0; this.my = y0;
+      }
+      this.rate = this.gbc ? GBC_RATE : DMG_RATE;
+      this.offsets = []; // packet start (file offset)
+      let bank = 1, ptr = 0x4000;
+      for (let k = 0; k < this.npk; k++) {
+        if (this.mode === "normal") { this.offsets.push(BANK * (1 + Math.floor(k / this.ppb)) + (k % this.ppb) * this.pkt); continue; }
+        const base = bank * BANK + (ptr - 0x4000); this.offsets.push(base);
+        let p = base + this.aud + (this.gbc ? 64 : 0);
+        for (;;) {
+          const cnt = rom[p++];
+          if (cnt === 0) { ptr = 0x4000 + (p - bank * BANK); break; }
+          if (cnt === 0xFF) { bank++; ptr = 0x4000; break; }
+          p += 2 + cnt * (this.gbc ? 16 : 8);
+        }
+        if (ptr >= 0x8000) { bank++; ptr = 0x4000; }
+      }
+      this.frames = this.npk - 1;
+      this.reset();
+    }
+    audio() { // all audio bytes in play order
+      const out = new Uint8Array(this.npk * this.aud);
+      for (let k = 0; k < this.npk; k++) out.set(this.rom.subarray(this.offsets[k], this.offsets[k] + this.aud), k * this.aud);
+      return out;
+    }
+    reset() {
+      this.k = 0;
+      if (this.gbc) { this.vram = [new Uint8Array(0x2000), new Uint8Array(0x2000)]; this.vram[0].set(this.rom.subarray(0x3000, 0x3800), 0x1800); this.vram[1].set(this.rom.subarray(0x3800, 0x4000), 0x1800); }
+      else this.buf = [new Uint8Array(this.T * 16), new Uint8Array(this.T * 16)];
+    }
+    // apply packet k (must be sequential), returns nothing
+    step() {
+      const k = this.k, rom = this.rom; let p = this.offsets[k] + this.aud;
+      if (this.mode === "normal") this.buf[k & 1].set(rom.subarray(p, p + this.T * 16));
+      else if (this.mode === "z") {
+        const b = this.buf[k & 1];
+        for (;;) { const cnt = rom[p++]; if (cnt === 0 || cnt === 0xFF) break; const off = rom[p] | rom[p + 1] << 8; p += 2; b.set(rom.subarray(p, p + cnt * 8), off); p += cnt * 8; }
+      } else {
+        this.pal = rom.subarray(p, p + 64); p += 64;
+        for (;;) { const cnt = rom[p++]; if (cnt === 0 || cnt === 0xFF) break; const lo = rom[p], hi = rom[p + 1]; p += 2;
+          const vb = (hi >> 6) & 1, addr = ((hi & 0xBF) << 8 | lo) - 0x8000; this.vram[vb].set(rom.subarray(p, p + cnt * 16), addr); p += cnt * 16; }
+        this.pals = this.pals || []; this.pals[k & 1] = this.pal;
+      }
+      this.k++;
+    }
+    seek(k) { if (k < this.k - 1) this.reset(); while (this.k <= k) this.step(); }
+    // render frame k (after seek(k)) into RGBA 160x144 using a 4-colour DMG palette (array of [r,g,b])
+    render(k, out, dmgPal) {
+      if (this.gbc) return this.renderGbc(k, out);
+      const b = this.buf[k & 1], W = 160, tw = this.tw, th = this.th;
+      const sx = this.scx >= 128 ? this.scx - 256 : this.scx, sy = this.scy >= 128 ? this.scy - 256 : this.scy;
+      const ox = this.mx * 8 - sx, oy = this.my * 8 - sy;
+      for (let i = 0; i < 160 * 144; i++) { const c = dmgPal[3]; out[i * 4] = c[0]; out[i * 4 + 1] = c[1]; out[i * 4 + 2] = c[2]; out[i * 4 + 3] = 255; }
+      for (let t = 0; t < tw * th; t++) { const tx = t % tw, ty = (t / tw) | 0;
+        for (let r = 0; r < 8; r++) { const lo = b[t * 16 + r * 2], hi = b[t * 16 + r * 2 + 1], y = oy + ty * 8 + r; if (y < 0 || y >= 144) continue;
+          for (let c = 0; c < 8; c++) { const x = ox + tx * 8 + c; if (x < 0 || x >= 160) continue; const v = ((lo >> (7 - c)) & 1) | (((hi >> (7 - c)) & 1) << 1), col = dmgPal[v], o = (y * W + x) * 4; out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2]; } } }
+    }
+    renderGbc(k, out) {
+      const buf = k & 1, v0 = this.vram[0], v1 = this.vram[1], mb = buf === 0 ? 0x1800 : 0x1C00, pal = this.pals[buf];
+      const col = new Uint8Array(96); for (let i = 0; i < 32; i++) { const v = pal[i * 2] | pal[i * 2 + 1] << 8; col[i * 3] = (v & 31) * 255 / 31 | 0; col[i * 3 + 1] = ((v >> 5) & 31) * 255 / 31 | 0; col[i * 3 + 2] = ((v >> 10) & 31) * 255 / 31 | 0; }
+      for (let y = 0; y < 144; y++) { const yy = (y + this.scy) & 255, ty = yy >> 3, py = yy & 7;
+        for (let x = 0; x < 160; x++) { const xx = (x + this.scx) & 255, tx = xx >> 3, px = xx & 7;
+          const ix = v0[mb + ty * 32 + tx], at = v1[mb + ty * 32 + tx], bk = (at >> 3) & 1, pl = at & 7;
+          const addr = buf === 0 ? ix * 16 : (ix < 128 ? 0x1000 + ix * 16 : 0x0800 + (ix - 128) * 16);
+          const vr = bk ? v1 : v0, lo = vr[addr + py * 2], hi = vr[addr + py * 2 + 1];
+          const c = ((lo >> (7 - px)) & 1) | (((hi >> (7 - px)) & 1) << 1), q = (pl * 4 + c) * 3, o = (y * 160 + x) * 4;
+          out[o] = col[q]; out[o + 1] = col[q + 1]; out[o + 2] = col[q + 2]; out[o + 3] = 255; } }
+    }
+  }
+
+  // ---------------------------------------------------------------- planning
+  // Estimated bytes per video frame (for the length estimate in the UI)
+  function frameBytes(mode, compress, tw, th, n) {
+    const T = tw * th;
+    if (mode === "gbc") { const full = 2 * LINES * n + 64 + T * 16 + 2 * th * 16 + 13; return compress ? 2 * LINES * n + 64 + (T * 16 + 2 * th * 16) * 0.5 + 40 : full; }
+    if (compress) return LINES * n + T * 16 * 0.45 + 30;
+    return LINES * n + T * 16;
+  }
+  function maxSeconds(mode, compress, tw, th, n) {
+    const fb = frameBytes(mode, compress, tw, th, n);
+    const frames = compress ? (MAX_BANKS - 1) * BANK * 0.985 / fb : (MAX_BANKS - 1) * Math.floor(BANK / fb) - 1;
+    return Math.max(0, frames) * n / LCD_FPS;
+  }
+
+  return { CPU_HZ, FRAME_CYCLES, LCD_FPS, LINES, BANK, MAX_BANKS, DMG_RATE, GBC_RATE, SILENCE,
+    chooseLayoutDMG, chooseLayoutGBC, zMaxTiles, gbcCap, gbcFullSlots, sizeOK, maxSeconds, frameBytes,
+    quantizeAudio, dmgIndices, percentile, DmgNormal, DmgZ, Gbc, RomReader, tilesFromIdx };
+})();
+if (typeof module !== "undefined") module.exports = VB;
+</script>
+<script type="text/plain" id="worker-src">
+// ---- worker glue ----
+let job = null;
+self.onmessage = (ev) => {
+  const m = ev.data;
+  try {
+    if (m.type === "start") {
+      const o = m.opts;
+      const common = { n: o.n, tw: o.tw, th: o.th, audio: null, title: o.title, players: m.players };
+      let audio = null;
+      if (o.audioL) audio = VB.quantizeAudio(o.audioL, o.audioR, o.volume, o.mode === "gbc" ? VB.GBC_RATE : VB.DMG_RATE, 0.3);
+      common.audio = audio;
+      let b;
+      if (o.mode === "gbc") b = new VB.Gbc(Object.assign(common, { compress: o.compress, tol: o.tol, dither: o.dither, gamma: o.gamma }));
+      else if (o.compress) b = new VB.DmgZ(Object.assign(common, { tol: o.tol }));
+      else b = new VB.DmgNormal(common);
+      job = { b, o, k: 0, W: o.tw * 8, H: o.th * 8 };
+      self.postMessage({ type: "ready" });
+    } else if (m.type === "frame") {
+      const j = job, W = j.W, H = j.H, px = new Uint8Array(m.data);
+      let r, view = null;
+      if (j.o.mode === "gbc") { r = j.b.add(px); }
+      else {
+        const g = new Uint8Array(W * H);
+        for (let i = 0; i < W * H; i++) g[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+        const idx = VB.dmgIndices(g, W, H, j.o.lo, j.o.hi, j.o.gamma, j.o.dither);
+        r = j.b.add(idx);
+        if (r && j.k % 2 === 0) view = idx;
+      }
+      if (r === null) { self.postMessage({ type: "full", k: j.k }); return; }
+      j.k++;
+      const msg = { type: "ack", k: j.k, bytes: j.b.placer ? j.b.placer.buf.n : j.k * j.b.pkt };
+      if (view) msg.idx = view;
+      if (j.o.mode === "gbc" && j.k % 2 === 1) msg.rgb = gbcView(j);
+      self.postMessage(msg);
+    } else if (m.type === "finish") {
+      const rom = job.b.finish();
+      const T = job.o.tw * job.o.th;
+      const ratio = job.b.sent != null && job.k ? job.b.sent / (job.k * T) : 1;
+      self.postMessage({ type: "rom", rom, frames: job.k, ratio }, [rom.buffer]);
+      job = null;
+    }
+  } catch (e) { self.postMessage({ type: "error", message: String(e && e.stack || e) }); }
+};
+function gbcView(j) { // what the Game Boy will show for the frame just encoded
+  const b = j.b, buf = (b.k - 1) & 1, P = b.lastP, pal = b.bufPal[buf], idx = b.bufIdx[buf], tw = b.tw, th = b.th;
+  const W = tw * 8, out = new Uint8Array(W * th * 8 * 3);
+  for (let t = 0; t < tw * th; t++) { const tx = t % tw, ty = (t / tw) | 0;
+    for (let i = 0; i < 64; i++) { const c = (pal[t] * 4 + idx[t * 64 + i]) * 3, o = ((ty * 8 + (i >> 3)) * W + tx * 8 + (i & 7)) * 3;
+      out[o] = P[c] * 255 / 31; out[o + 1] = P[c + 1] * 255 / 31; out[o + 2] = P[c + 2] * 255 / 31; } }
+  return out;
+}
+</script>
+<script>
+// VIDEO BOY engine: video frames + audio -> Game Boy / Game Boy Color ROM.
+// Port of videoboy.py. Runs in a Web Worker and in Node (no DOM).
+const VB = (() => {
+  "use strict";
+  const CPU_HZ = 4194304, FRAME_CYCLES = 70224, LCD_FPS = CPU_HZ / FRAME_CYCLES, LINES = 154;
+  const BANK = 16384, MAX_BANKS = 512, SILENCE = 0x44;
+  const DMG_RATE = 9198, GBC_RATE = 18396;
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const MAX_TILES = 191, CHUNKS_PER_LCD_FRAME = 160, RUN_MAX = 127, SLOTS_Z = 152;
+  const GBC_SPLIT = 232, GBC_BORDER = 232;
+  const LUM = [0.3, 0.59, 0.11];
+
+  // ---------------------------------------------------------------- helpers
+  function b64(s) {
+    if (typeof atob === "function") { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+    return new Uint8Array(Buffer.from(s, "base64"));
+  }
+  function rint(x) { // numpy rint: round half to even
+    const f = Math.floor(x), d = x - f;
+    if (d > 0.5) return f + 1;
+    if (d < 0.5) return f;
+    return (f % 2 === 0) ? f : f + 1;
+  }
+  function percentile(arr, q) { // numpy default (linear)
+    const a = Float64Array.from(arr).sort();
+    if (!a.length) return 0;
+    const pos = (a.length - 1) * q / 100, lo = Math.floor(pos), hi = Math.ceil(pos);
+    return a[lo] + (a[hi] - a[lo]) * (pos - lo);
+  }
+  class ByteBuf {
+    constructor(cap = 1 << 20) { this.a = new Uint8Array(cap); this.n = 0; }
+    ensure(k) { if (this.n + k > this.a.length) { let c = this.a.length * 2; while (c < this.n + k) c *= 2; const b = new Uint8Array(c); b.set(this.a.subarray(0, this.n)); this.a = b; } }
+    push(x) { this.ensure(1); this.a[this.n++] = x; }
+    put(u) { this.ensure(u.length); this.a.set(u, this.n); this.n += u.length; }
+    fill(v, k) { this.ensure(k); this.a.fill(v, this.n, this.n + k); this.n += k; }
+    bytes() { return this.a.subarray(0, this.n); }
+  }
+
+  // ---------------------------------------------------------------- layouts
+  function chooseLayoutDMG(aspect, n, limit) {
+    if (limit == null) limit = Math.min(MAX_TILES, Math.floor(CHUNKS_PER_LCD_FRAME * n / 2));
+    let best = null;
+    for (let th = 1; th <= 18; th++) for (let tw = 1; tw <= 20; tw++) {
+      if (tw * th > limit) continue;
+      const err = Math.abs(Math.log((tw / th) / aspect));
+      if (err > 0.12) continue;
+      if (!best || tw * th > best.a || (tw * th === best.a && err < best.err)) best = { a: tw * th, err, tw, th };
+    }
+    return best ? [best.tw, best.th] : [Math.min(20, limit), 1];
+  }
+  function zMaxTiles(n) { const cap = SLOTS_Z * n; let t = MAX_TILES; while (2 * t + Math.ceil(t / RUN_MAX) + 1 > cap) t--; return t; }
+  function gbcCap(n) { return 163 * n - 5; }
+  function gbcFullSlots(tw, th) { const t = tw * th; return t + 2 * th + 1 + (t > 0 ? 1 : 0) + (t > GBC_SPLIT ? 1 : 0) + 1; }
+  function chooseLayoutGBC(aspect, n) {
+    const cap = gbcCap(n);
+    let best = null;
+    for (let th = 1; th <= 18; th++) for (let tw = 1; tw <= 20; tw++) {
+      if (gbcFullSlots(tw, th) > cap) continue;
+      const err = Math.abs(Math.log((tw / th) / aspect));
+      if (err > 0.12) continue;
+      if (!best || tw * th > best.a || (tw * th === best.a && err < best.err)) best = { a: tw * th, err, tw, th };
+    }
+    return best ? [best.tw, best.th] : [20, 1];
+  }
+  // fixed-size checks for a user-given size
+  function sizeOK(mode, compress, tw, th, n) {
+    const T = tw * th;
+    if (mode === "gbc") return gbcFullSlots(tw, th) <= gbcCap(n);
+    if (compress) return T <= zMaxTiles(n);
+    return T <= MAX_TILES && T * 2 <= CHUNKS_PER_LCD_FRAME * n;
+  }
+
+  // ---------------------------------------------------------------- audio
+  // window sum like np.convolve(x, ones(w)/w, "same")
+  function boxSame(x, w) {
+    const N = x.length, out = new Float64Array(N), ps = new Float64Array(N + 1);
+    for (let i = 0; i < N; i++) ps[i + 1] = ps[i] + x[i];
+    const a = Math.floor(w / 2), b = Math.floor((w - 1) / 2);
+    for (let i = 0; i < N; i++) {
+      const lo = Math.max(0, i - a), hi = Math.min(N - 1, i + b);
+      out[i] = (ps[hi + 1] - ps[lo]) / w;
+    }
+    return out;
+  }
+  function quantizeChannel(ch, rate, shape, gate = 0.03) {
+    const N = ch.length, w = Math.floor(rate / 50), k = Math.floor(rate * 0.06);
+    const ab = new Float64Array(N); for (let i = 0; i < N; i++) ab[i] = Math.abs(ch[i]);
+    const env = boxSame(ab, w);
+    const sil = new Float64Array(N); for (let i = 0; i < N; i++) sil[i] = env[i] < gate ? 1 : 0;
+    const glide = boxSame(sil, k);
+    const out = new Uint8Array(N);
+    let e = 0;
+    for (let i = 0; i < N; i++) {
+      if (sil[i]) { out[i] = 4; e = 0; continue; }
+      const c = Math.max(-1, Math.min(1, ch[i]));
+      const v = (3.5 + 0.5 * glide[i] + c * 4.0) - shape * e;
+      let q = v > -0.5 ? Math.floor(v + 0.5) : 0;
+      if (q > 7) q = 7;
+      e = v - q;
+      if (e > 1) e = 1; else if (e < -1) e = -1;
+      out[i] = q;
+    }
+    return out;
+  }
+  // L, R: Float32Array (already filtered, at the target rate)
+  function quantizeAudio(L, R, gain, rate, shape = 0.3) {
+    const N = L.length;
+    if (!N) return new Uint8Array(0);
+    const ab = new Float32Array(2 * N);
+    for (let i = 0; i < N; i++) { ab[2 * i] = Math.abs(L[i]); ab[2 * i + 1] = Math.abs(R[i]); }
+    // 99.5th percentile via sampling for long inputs (exact for short ones)
+    let peak;
+    if (ab.length <= 4e6) peak = percentile(ab, 99.5);
+    else { const s = new Float32Array(4e6); const st = ab.length / 4e6; for (let i = 0; i < 4e6; i++) s[i] = ab[Math.floor(i * st)]; peak = percentile(s, 99.5); }
+    if (peak < 1e-4) return new Uint8Array(N).fill(SILENCE);
+    const t11 = Math.tanh(1.1);
+    const y = (x) => { const o = new Float64Array(N); for (let i = 0; i < N; i++) o[i] = Math.tanh(x[i] / peak * 1.1 * gain) / t11; return o; };
+    const l = quantizeChannel(y(L), rate, shape), r = quantizeChannel(y(R), rate, shape);
+    const out = new Uint8Array(N);
+    for (let i = 0; i < N; i++) out[i] = (l[i] << 4) | r[i];
+    return out;
+  }
+  function audioSlice(audio, k, len) { // audio of packet k (= audio while frame k-1 is shown)
+    const a = new Uint8Array(len).fill(SILENCE);
+    if (k > 0 && audio) { const s = (k - 1) * len; if (s < audio.length) a.set(audio.subarray(s, Math.min(audio.length, s + len))); }
+    return a;
+  }
+
+  // ---------------------------------------------------------------- DMG picture
+  function dmgIndices(gray, W, H, lo, hi, gamma, dither) {
+    const out = new Uint8Array(W * H);
+    const useC = hi - lo > 0.05;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let f = gray[y * W + x] / 255;
+      if (useC) f = Math.min(1, Math.max(0, (f - lo) / (hi - lo)));
+      if (gamma !== 1) f = Math.pow(f, gamma);
+      let v = f * 3;
+      if (dither) v += (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5;
+      const l = Math.min(3, Math.max(0, rint(v)));
+      out[y * W + x] = 3 - l;
+    }
+    return out;
+  }
+  function tilesFromIdx(idx, tw, th) { // row-major tiles -> 2bpp
+    const W = tw * 8, out = new Uint8Array(tw * th * 16);
+    let o = 0;
+    for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) for (let r = 0; r < 8; r++) {
+      let lo = 0, hi = 0;
+      const base = (ty * 8 + r) * W + tx * 8;
+      for (let c = 0; c < 8; c++) { const v = idx[base + c]; lo |= (v & 1) << (7 - c); hi |= ((v >> 1) & 1) << (7 - c); }
+      out[o++] = lo; out[o++] = hi;
+    }
+    return out;
+  }
+  function tilePixels(idx, tw, th) { // (T,64)
+    const W = tw * 8, T = tw * th, out = new Uint8Array(T * 64);
+    for (let t = 0; t < T; t++) { const tx = t % tw, ty = (t / tw) | 0; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) out[t * 64 + r * 8 + c] = idx[(ty * 8 + r) * W + tx * 8 + c]; }
+    return out;
+  }
+
+  // ---------------------------------------------------------------- ROM finalize
+  function finalize(playerB64, cfg, cfgAddr, maps, mapsAddr, data, nbanks, title, gbc) {
+    const p = b64(playerB64);
+    const bank0 = new Uint8Array(BANK); bank0.set(p);
+    if (!gbc) bank0.fill(191, 0x3000, 0x3800); // DMG default maps
+    bank0.set(cfg, cfgAddr); bank0.set(maps, mapsAddr);
+    let code = 0; while ((2 << code) < 1 + nbanks) code++;
+    const rom = new Uint8Array((2 << code) * BANK).fill(0xFF);
+    rom.set(bank0, 0); rom.set(data, BANK);
+    const t = String(title || "VIDEOBOY").toUpperCase().replace(/[^\x20-\x5F]/g, "?").slice(0, gbc ? 11 : 15);
+    for (let i = 0; i < 16; i++) rom[0x134 + i] = 0;
+    if (gbc) for (let i = 0; i < 15; i++) rom[0x134 + i] = 0;
+    for (let i = 0; i < t.length; i++) rom[0x134 + i] = t.charCodeAt(i);
+    rom[0x143] = gbc ? 0xC0 : 0x00; rom[0x147] = 0x19; rom[0x148] = code; rom[0x149] = 0;
+    let c = 0; for (let i = 0x134; i < 0x14D; i++) c = (c - rom[i] - 1) & 0xFF;
+    rom[0x14D] = c; rom[0x14E] = rom[0x14F] = 0;
+    let g = 0; for (let i = 0; i < rom.length; i++) g = (g + rom[i]) & 0xFFFF;
+    rom[0x14E] = g >> 8; rom[0x14F] = g & 0xFF;
+    return rom;
+  }
+  function u16(v) { return [v & 255, (v >> 8) & 255]; }
+  function scrollFix(tw, th) { return [(-4 * (tw % 2)) & 255, (-4 * (th % 2)) & 255]; }
+  function dmgMaps(tw, th) {
+    const x0 = (20 - tw) >> 1, y0 = (18 - th) >> 1, m = new Uint8Array(2048).fill(191);
+    for (let i = 0; i < tw * th; i++) { const y = y0 + ((i / tw) | 0), x = x0 + i % tw; m[y * 32 + x] = i; m[1024 + y * 32 + x] = (192 + i) & 255; }
+    return m;
+  }
+
+  // Bank placement with exact fit (same rules as the players)
+  class Placer {
+    constructor(maxBanks = MAX_BANKS) { this.buf = new ByteBuf(); this.lastEnd = -1; this.limit = (maxBanks - 1) * BANK; }
+    posAfter(pos, len) { return pos + ((pos % BANK) && (pos % BANK) + len > BANK ? BANK - pos % BANK : 0) + len; }
+    fits(len, tailLen) { const p = this.posAfter(this.buf.n, len); return this.posAfter(p, tailLen) <= this.limit; }
+    add(p) {
+      const b = this.buf;
+      if (b.n && b.n % BANK === 0) b.a[this.lastEnd] = 0xFF;
+      else if (b.n % BANK + p.length > BANK) { b.a[this.lastEnd] = 0xFF; b.fill(0xFF, BANK - b.n % BANK); }
+      b.put(p); this.lastEnd = b.n - 1;
+    }
+    finish() { const nb = Math.ceil(this.buf.n / BANK); this.buf.fill(0xFF, nb * BANK - this.buf.n); return [this.buf.bytes(), nb]; }
+  }
+
+  // ---------------------------------------------------------------- DMG normal
+  class DmgNormal {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, players
+      this.T = this.tw * this.th; this.aud = LINES * this.n; this.pkt = this.aud + this.T * 16;
+      this.ppb = Math.floor(BANK / this.pkt); this.maxFrames = (MAX_BANKS - 1) * this.ppb - 1;
+      this.tiles = []; this.full = false;
+    }
+    add(idx) {
+      if (this.tiles.length >= this.maxFrames) { this.full = true; return null; }
+      const t = tilesFromIdx(idx, this.tw, this.th); this.tiles.push(t);
+      const k = this.tiles.length - 1, p = new Uint8Array(this.pkt);
+      p.set(audioSlice(this.audio, k, this.aud)); p.set(t, this.aud);
+      return p;
+    }
+    finish() {
+      const F = this.tiles.length, npk = F + 1, nb = Math.ceil(npk / this.ppb);
+      const data = new Uint8Array(nb * BANK);
+      for (let k = 0; k < npk; k++) {
+        const off = Math.floor(k / this.ppb) * BANK + (k % this.ppb) * this.pkt;
+        data.set(audioSlice(this.audio, k, this.aud), off);
+        if (k < F) data.set(this.tiles[k], off + this.aud);
+      }
+      const cfg = [this.n, ...u16(this.aud), ...u16(this.T * 2), ...u16(this.pkt), this.ppb, ...u16(npk), ...scrollFix(this.tw, this.th)];
+      return finalize(this.players.dmg, cfg, 0x2F00, dmgMaps(this.tw, this.th), 0x3000, data, nb, this.title, false);
+    }
+  }
+
+  // ---------------------------------------------------------------- DMG compressed
+  function zRuns(changed) {
+    const runs = [];
+    for (const i of changed) {
+      const r = runs[runs.length - 1];
+      if (r && r[0] + r[1] === i && r[1] < RUN_MAX) r[1]++; else runs.push([i, 1]);
+    }
+    return runs;
+  }
+  class DmgZ {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, tol, players
+      this.T = this.tw * this.th; this.aud = LINES * this.n; this.cap = SLOTS_Z * this.n;
+      this.buf = [null, null]; this.placer = new Placer(); this.k = 0; this.sent = 0; this.full = false;
+    }
+    add(idx) {
+      if (this.full) return null;
+      const T = this.T, pix = tilePixels(idx, this.tw, this.th), tiles = tilesFromIdx(idx, this.tw, this.th);
+      const b = this.k & 1;
+      let changed;
+      if (!this.buf[b]) { changed = [...Array(T).keys()]; this.buf[b] = pix.slice(); }
+      else {
+        changed = [];
+        for (let t = 0; t < T; t++) { let d = 0; for (let i = 0; i < 64; i++) if (this.buf[b][t * 64 + i] !== pix[t * 64 + i]) d++; if (d > this.tol) changed.push(t); }
+        if (2 * changed.length + zRuns(changed).length + 1 > this.cap) changed = [...Array(T).keys()];
+        for (const t of changed) this.buf[b].set(pix.subarray(t * 64, t * 64 + 64), t * 64);
+      }
+      const p = new ByteBuf(this.aud + T * 16 + 512);
+      p.put(audioSlice(this.audio, this.k, this.aud));
+      for (const [st, ln] of zRuns(changed)) { const off = st * 16; p.push(ln * 2); p.push(off & 255); p.push(off >> 8); p.put(tiles.subarray(st * 16, (st + ln) * 16)); }
+      p.push(0);
+      const bytes = p.bytes();
+      if (!this.placer.fits(bytes.length, this.aud + 1)) { this.full = true; return null; }
+      this.placer.add(bytes); this.sent += changed.length; this.k++;
+      return bytes;
+    }
+    finish() {
+      const F = this.k, tail = new Uint8Array(this.aud + 1);
+      tail.set(audioSlice(this.audio, F, this.aud)); tail[this.aud] = 0;
+      this.placer.add(tail);
+      const [data, nb] = this.placer.finish();
+      const cfg = [this.n, ...u16(this.aud), ...u16(this.T * 2), 0, 0, 1, ...u16(F + 1), ...scrollFix(this.tw, this.th), 1];
+      return finalize(this.players.dmg, cfg, 0x2F00, dmgMaps(this.tw, this.th), 0x3000, data, nb, this.title, false);
+    }
+  }
+
+  // ---------------------------------------------------------------- GBC
+  function gbcTileLoc(t, b) {
+    if (b === 0) return t < GBC_SPLIT ? [0, 0x8000 + 16 * t, t] : [1, 0x8000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT];
+    return t < GBC_SPLIT ? [1, 0x8980 + 16 * t, (152 + t) & 255] : [0, 0x9000 + 16 * (t - GBC_SPLIT), t - GBC_SPLIT];
+  }
+  function gbcMaps(tw, th) {
+    const x0 = (20 - tw) >> 1, y0 = (18 - th) >> 1, m = new Uint8Array(4096);
+    m.fill(GBC_BORDER, 0, 2048);
+    for (let b = 0; b < 2; b++) for (let t = 0; t < tw * th; t++) {
+      const [bank, , ix] = gbcTileLoc(t, b), pos = (y0 + ((t / tw) | 0)) * 32 + x0 + t % tw;
+      m[b * 1024 + pos] = ix; m[2048 + b * 1024 + pos] = bank << 3;
+    }
+    return m;
+  }
+  class GbcQuantizer {
+    constructor(tw, th, dither, border, gamma) {
+      Object.assign(this, { tw, th, dither, border, gamma });
+      this.T = tw * th; this.prev = null; this.prevErr = null; this.count = 0;
+      this.thr = new Float64Array(64); for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) this.thr[y * 8 + x] = (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+      this.lut = new Float64Array(256); for (let i = 0; i < 256; i++) this.lut[i] = Math.pow(i / 255, gamma) * 31;
+      this.X = new Float64Array(this.T * 192);
+    }
+    tiles(rgba) { // RGBA (W*H*4) -> X (T,64,3)
+      const W = this.tw * 8, X = this.X, lut = this.lut;
+      for (let t = 0; t < this.T; t++) { const tx = t % this.tw, ty = (t / this.tw) | 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const s = ((ty * 8 + r) * W + tx * 8 + c) * 4, d = (t * 64 + r * 8 + c) * 3; X[d] = lut[rgba[s]]; X[d + 1] = lut[rgba[s + 1]]; X[d + 2] = lut[rgba[s + 2]]; } }
+      return X;
+    }
+    tileErr(X, P) { // (T,8)
+      const T = this.T, E = new Float64Array(T * 8);
+      for (let t = 0; t < T; t++) for (let p = 0; p < 8; p++) {
+        let s = 0; const pb = p * 12;
+        for (let i = 0; i < 64; i++) {
+          const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], b = X[o + 2];
+          let m = Infinity;
+          for (let c = 0; c < 4; c++) { const q = pb + c * 3, dr = r - P[q], dg = g - P[q + 1], db = b - P[q + 2], d = dr * dr + dg * dg + db * db; if (d < m) m = d; }
+          s += m;
+        }
+        E[t * 8 + p] = s;
+      }
+      return E;
+    }
+    assign(X, P) {
+      const E = this.tileErr(X, P), a = new Uint8Array(this.T); let tot = 0;
+      for (let t = 0; t < this.T; t++) { let bp = 0, bv = E[t * 8]; for (let p = 1; p < 8; p++) if (E[t * 8 + p] < bv) { bv = E[t * 8 + p]; bp = p; } a[t] = bp; tot += bv; }
+      return [a, tot, E];
+    }
+    fix(P) { const Q = new Float64Array(96); for (let i = 0; i < 96; i++) Q[i] = Math.min(31, Math.max(0, rint(P[i]))); if (this.border) Q[0] = Q[1] = Q[2] = 0; return Q; }
+    members(X, a, p) { const idx = []; for (let t = 0; t < this.T; t++) if (a[t] === p) idx.push(t); return idx; }
+    refine(X, P, a, iters = 2) {
+      P = Float64Array.from(P);
+      for (let p = 0; p < 8; p++) {
+        const mem = this.members(X, a, p); if (!mem.length) continue;
+        const n = mem.length * 64, lab = new Uint8Array(n);
+        for (let it = 0; it < iters; it++) {
+          const sum = new Float64Array(12), cnt = new Float64Array(4);
+          let j = 0;
+          for (const t of mem) for (let i = 0; i < 64; i++, j++) {
+            const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], b = X[o + 2];
+            let bc = 0, bd = Infinity;
+            for (let c = 0; c < 4; c++) { const q = p * 12 + c * 3, d = (r - P[q]) ** 2 + (g - P[q + 1]) ** 2 + (b - P[q + 2]) ** 2; if (d < bd) { bd = d; bc = c; } }
+            lab[j] = bc; sum[bc * 3] += r; sum[bc * 3 + 1] += g; sum[bc * 3 + 2] += b; cnt[bc]++;
+          }
+          for (let c = 0; c < 4; c++) if (cnt[c]) { P[p * 12 + c * 3] = sum[c * 3] / cnt[c]; P[p * 12 + c * 3 + 1] = sum[c * 3 + 1] / cnt[c]; P[p * 12 + c * 3 + 2] = sum[c * 3 + 2] / cnt[c]; }
+        }
+      }
+      return P;
+    }
+    pixLum(X, t, i) { const o = (t * 64 + i) * 3; return X[o] * LUM[0] + X[o + 1] * LUM[1] + X[o + 2] * LUM[2]; }
+    quantilesInto(P, p, X, tilesList) {
+      const px = []; for (const t of tilesList) for (let i = 0; i < 64; i++) px.push([this.pixLum(X, t, i), t, i]);
+      px.sort((u, v) => u[0] - v[0]);
+      for (let c = 0; c < 4; c++) { const e = px[Math.min(px.length - 1, Math.floor((c + 0.5) / 4 * px.length))], o = (e[1] * 64 + e[2]) * 3; P[p * 12 + c * 3] = X[o]; P[p * 12 + c * 3 + 1] = X[o + 1]; P[p * 12 + c * 3 + 2] = X[o + 2]; }
+    }
+    cold(X) {
+      const T = this.T, means = new Float64Array(T * 3);
+      for (let t = 0; t < T; t++) for (let i = 0; i < 64; i++) for (let k = 0; k < 3; k++) means[t * 3 + k] += X[(t * 64 + i) * 3 + k] / 64;
+      const lum = Array.from({ length: T }, (_, t) => means[t * 3] * LUM[0] + means[t * 3 + 1] * LUM[1] + means[t * 3 + 2] * LUM[2]);
+      const order = [...Array(T).keys()].sort((u, v) => lum[u] - lum[v] || u - v);
+      const cent = new Float64Array(24);
+      for (let k = 0; k < 8; k++) { const t = order[Math.floor(k * (T - 1) / 7)]; cent.set(means.subarray(t * 3, t * 3 + 3), k * 3); }
+      let lab = new Uint8Array(T);
+      for (let it = 0; it < 6; it++) {
+        for (let t = 0; t < T; t++) { let bk = 0, bd = Infinity; for (let k = 0; k < 8; k++) { const d = (means[t * 3] - cent[k * 3]) ** 2 + (means[t * 3 + 1] - cent[k * 3 + 1]) ** 2 + (means[t * 3 + 2] - cent[k * 3 + 2]) ** 2; if (d < bd) { bd = d; bk = k; } } lab[t] = bk; }
+        for (let k = 0; k < 8; k++) { let s0 = 0, s1 = 0, s2 = 0, c = 0; for (let t = 0; t < T; t++) if (lab[t] === k) { s0 += means[t * 3]; s1 += means[t * 3 + 1]; s2 += means[t * 3 + 2]; c++; } if (c) { cent[k * 3] = s0 / c; cent[k * 3 + 1] = s1 / c; cent[k * 3 + 2] = s2 / c; } }
+      }
+      for (let t = 0; t < T; t++) { let bk = 0, bd = Infinity; for (let k = 0; k < 8; k++) { const d = (means[t * 3] - cent[k * 3]) ** 2 + (means[t * 3 + 1] - cent[k * 3 + 1]) ** 2 + (means[t * 3 + 2] - cent[k * 3 + 2]) ** 2; if (d < bd) { bd = d; bk = k; } } lab[t] = bk; }
+      let P = new Float64Array(96);
+      for (let k = 0; k < 8; k++) { const mem = this.members(X, lab, k); this.quantilesInto(P, k, X, mem.length ? mem : [order[Math.floor(k * T / 8)]]); }
+      let [a] = this.assign(X, P);
+      for (let r = 0; r < 3; r++) { P = this.refine(X, P, a, 2); [a] = this.assign(X, P); }
+      return P;
+    }
+    reseedEmpty(X, P, a) {
+      const used = new Array(8).fill(0); for (let t = 0; t < this.T; t++) used[a[t]]++;
+      if (Math.min(...used) > 0) return P;
+      const E = this.tileErr(X, P), d = Array.from({ length: this.T }, (_, t) => E[t * 8 + a[t]]);
+      const worst = [...Array(this.T).keys()].sort((u, v) => d[v] - d[u]);
+      let j = 0;
+      for (let p = 0; p < 8; p++) if (!used[p]) { const t = worst[j++ % worst.length]; this.quantilesInto(P, p, X, [t]); }
+      return P;
+    }
+    quantize(rgba) {
+      const X = this.tiles(rgba), cands = [];
+      let scene = true;
+      if (this.prev) {
+        let [a, e] = this.assign(X, this.prev);
+        cands.push([e * 0.92, this.prev]);
+        let Pw = Float64Array.from(this.prev);
+        for (let i = 0; i < 2; i++) { Pw = this.reseedEmpty(X, Pw, a); Pw = this.fix(this.refine(X, Pw, a, 2)); [a, e] = this.assign(X, Pw); }
+        cands.push([e, Pw]);
+        scene = this.prevErr != null && e > 1.6 * this.prevErr + 1;
+      }
+      if (scene || this.count % 48 === 0) { const Pc = this.fix(this.cold(X)); const [, e] = this.assign(X, Pc); cands.push([e, Pc]); }
+      let best = cands[0]; for (const c of cands) if (c[0] < best[0]) best = c;
+      const P = this.fix(best[1]);
+      const [a, err] = this.assign(X, P);
+      this.prev = P; this.prevErr = err; this.count++;
+      // colour index per pixel: ordered dithering between the two closest colours
+      const T = this.T, idx = new Uint8Array(T * 64);
+      for (let t = 0; t < T; t++) { const pb = a[t] * 12;
+        for (let i = 0; i < 64; i++) {
+          const o = (t * 64 + i) * 3, r = X[o], g = X[o + 1], bl = X[o + 2];
+          let c1 = -1, d1 = Infinity, c2 = -1, d2 = Infinity;
+          for (let c = 0; c < 4; c++) { const q = pb + c * 3, d = (r - P[q]) ** 2 + (g - P[q + 1]) ** 2 + (bl - P[q + 2]) ** 2;
+            if (d < d1) { c2 = c1; d2 = d1; c1 = c; d1 = d; } else if (d < d2) { c2 = c; d2 = d; } }
+          if (!this.dither) { idx[t * 64 + i] = c1; continue; }
+          const A = pb + c1 * 3, B = pb + c2 * 3, v0 = P[B] - P[A], v1 = P[B + 1] - P[A + 1], v2 = P[B + 2] - P[A + 2];
+          const tt = ((r - P[A]) * v0 + (g - P[A + 1]) * v1 + (bl - P[A + 2]) * v2) / Math.max(v0 * v0 + v1 * v1 + v2 * v2, 1e-9);
+          idx[t * 64 + i] = tt > this.thr[i] ? c2 : c1;
+        } }
+      const Pi = new Uint8Array(96); for (let i = 0; i < 96; i++) Pi[i] = P[i];
+      return [Pi, a, idx];
+    }
+  }
+  function gbcTileBytes(idx, T) { // (T,64) -> (T,16)
+    const out = new Uint8Array(T * 16);
+    for (let t = 0; t < T; t++) for (let r = 0; r < 8; r++) { let lo = 0, hi = 0; for (let c = 0; c < 8; c++) { const v = idx[t * 64 + r * 8 + c]; lo |= (v & 1) << (7 - c); hi |= ((v >> 1) & 1) << (7 - c); } out[t * 16 + r * 2] = lo; out[t * 16 + r * 2 + 1] = hi; }
+    return out;
+  }
+  function gbcPalBytes(P) { const o = new Uint8Array(64); for (let i = 0; i < 32; i++) { const v = P[i * 3] | (P[i * 3 + 1] << 5) | (P[i * 3 + 2] << 10); o[i * 2] = v & 255; o[i * 2 + 1] = v >> 8; } return o; }
+  class Gbc {
+    constructor(o) {
+      Object.assign(this, o); // n, tw, th, audio, title, compress, tol, dither, gamma, players
+      this.T = this.tw * this.th; this.aud = 2 * LINES * this.n; this.cap = gbcCap(this.n);
+      this.x0 = (20 - this.tw) >> 1; this.y0 = (18 - this.th) >> 1;
+      this.q = new GbcQuantizer(this.tw, this.th, this.dither, this.tw < 20 || this.th < 18, this.gamma);
+      this.bufPal = [null, null]; this.bufIdx = [null, null];
+      this.locs = [0, 1].map(b => Array.from({ length: this.T }, (_, t) => gbcTileLoc(t, b)));
+      this.placer = new Placer(); this.k = 0; this.sent = 0; this.full = false; this.lastP = null;
+    }
+    attrChunks(b, pal, rows) {
+      const base = b === 0 ? 0x9800 : 0x9C00, out = [];
+      for (const r of rows) {
+        const row = new Uint8Array(32);
+        for (let tx = 0; tx < this.tw; tx++) { const t = r * this.tw + tx; row[this.x0 + tx] = (this.locs[b][t][0] << 3) | pal[t]; }
+        const addr = base + (this.y0 + r) * 32;
+        out.push([1, addr, row.subarray(0, 16)], [1, addr + 16, row.subarray(16)]);
+      }
+      return out;
+    }
+    static runs(chunks) {
+      const s = chunks.slice().sort((u, v) => u[0] - v[0] || u[1] - v[1]), runs = [];
+      for (const [bank, addr, data] of s) {
+        const r = runs[runs.length - 1];
+        if (r && r.bank === bank && r.addr + r.len === addr && r.len < 254 * 16) { r.parts.push(data); r.len += 16; }
+        else runs.push({ bank, addr, len: 16, parts: [data] });
+      }
+      return runs;
+    }
+    add(rgba) {
+      if (this.full) return null;
+      const [P, pal, idx] = this.q.quantize(rgba);
+      const tiles = gbcTileBytes(idx, this.T), T = this.T, b = this.k & 1;
+      let full = !this.compress || !this.bufIdx[b], chunks, npal, nidx, nchanged;
+      if (!full) {
+        const bp = this.bufPal[b], bi = this.bufIdx[b], thr = this.tol === 0 ? 0 : 2, changed = [];
+        for (let t = 0; t < T; t++) {
+          let cnt = 0;
+          for (let i = 0; i < 64; i++) {
+            const o = (bp[t] * 4 + bi[t * 64 + i]) * 3, n = (pal[t] * 4 + idx[t * 64 + i]) * 3;
+            const d = Math.max(Math.abs(P[o] - P[n]), Math.abs(P[o + 1] - P[n + 1]), Math.abs(P[o + 2] - P[n + 2]));
+            if (d > thr) cnt++;
+          }
+          if (cnt > this.tol) changed.push(t);
+        }
+        npal = bp.slice(); nidx = bi.slice();
+        for (const t of changed) { npal[t] = pal[t]; nidx.set(idx.subarray(t * 64, t * 64 + 64), t * 64); }
+        const rows = [...new Set(changed.map(t => (t / this.tw) | 0))].sort((u, v) => u - v);
+        const oa = this.attrChunks(b, bp, rows), na = this.attrChunks(b, npal, rows);
+        const att = na.filter((c, i) => { const o = oa[i][2]; for (let j = 0; j < 16; j++) if (o[j] !== c[2][j]) return true; return false; });
+        chunks = changed.map(t => [this.locs[b][t][0], this.locs[b][t][1], tiles.subarray(t * 16, t * 16 + 16)]).concat(att);
+        nchanged = changed.length;
+        if (chunks.length + Gbc.runs(chunks).length + 1 > this.cap) full = true;
+      }
+      if (full) {
+        npal = pal.slice(); nidx = idx.slice(); nchanged = T;
+        chunks = Array.from({ length: T }, (_, t) => [this.locs[b][t][0], this.locs[b][t][1], tiles.subarray(t * 16, t * 16 + 16)])
+          .concat(this.attrChunks(b, npal, [...Array(this.th).keys()]));
+      }
+      const p = new ByteBuf(this.aud + 64 + chunks.length * 16 + 64);
+      p.put(audioSlice(this.audio, this.k, this.aud)); p.put(gbcPalBytes(P));
+      for (const r of Gbc.runs(chunks)) { p.push(r.len / 16); p.push(r.addr & 255); p.push((r.addr >> 8) | (r.bank << 6)); for (const d of r.parts) p.put(d); }
+      p.push(0);
+      const bytes = p.bytes();
+      if (!this.placer.fits(bytes.length, this.aud + 65)) { this.full = true; return null; }
+      this.placer.add(bytes);
+      this.bufPal[b] = npal; this.bufIdx[b] = nidx; this.sent += nchanged; this.k++; this.lastP = P;
+      return bytes;
+    }
+    finish() {
+      const F = this.k, tail = new Uint8Array(this.aud + 65);
+      tail.set(audioSlice(this.audio, F, this.aud)); tail.set(gbcPalBytes(this.lastP || new Uint8Array(96)), this.aud); tail[this.aud + 64] = 0;
+      this.placer.add(tail);
+      const [data, nb] = this.placer.finish();
+      const cfg = [this.n, ...u16(this.aud), ...scrollFix(this.tw, this.th), ...u16(F + 1)];
+      return finalize(this.players.gbc, cfg, 0x2F00, gbcMaps(this.tw, this.th), 0x3000, data, nb, this.title, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- ROM reader (preview playback)
+  // Decodes a finished ROM exactly like the player does: returns packets with audio + a render function.
+  class RomReader {
+    constructor(rom) {
+      this.rom = rom;
+      this.gbc = rom[0x143] === 0xC0;
+      const c = rom.subarray(0x2F00, 0x2F10);
+      if (this.gbc) {
+        this.n = c[0]; this.aud = c[1] | c[2] << 8; this.scx = c[3]; this.scy = c[4]; this.npk = c[5] | c[6] << 8; this.mode = "gbc";
+      } else {
+        this.n = c[0]; this.aud = c[1] | c[2] << 8; this.T = (c[3] | c[4] << 8) / 2; this.pkt = c[5] | c[6] << 8; this.ppb = c[7];
+        this.npk = c[8] | c[9] << 8; this.scx = c[10]; this.scy = c[11]; this.mode = c[12] ? "z" : "normal";
+        const m = rom.subarray(0x3000, 0x3400); let x0 = 32, y0 = 32, x1 = -1, y1 = -1;
+        for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (m[y * 32 + x] !== 191) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+        this.tw = x1 - x0 + 1; this.th = y1 - y0 + 1; this.mx = x0; this.my = y0;
+      }
+      this.rate = this.gbc ? GBC_RATE : DMG_RATE;
+      this.offsets = []; // packet start (file offset)
+      let bank = 1, ptr = 0x4000;
+      for (let k = 0; k < this.npk; k++) {
+        if (this.mode === "normal") { this.offsets.push(BANK * (1 + Math.floor(k / this.ppb)) + (k % this.ppb) * this.pkt); continue; }
+        const base = bank * BANK + (ptr - 0x4000); this.offsets.push(base);
+        let p = base + this.aud + (this.gbc ? 64 : 0);
+        for (;;) {
+          const cnt = rom[p++];
+          if (cnt === 0) { ptr = 0x4000 + (p - bank * BANK); break; }
+          if (cnt === 0xFF) { bank++; ptr = 0x4000; break; }
+          p += 2 + cnt * (this.gbc ? 16 : 8);
+        }
+        if (ptr >= 0x8000) { bank++; ptr = 0x4000; }
+      }
+      this.frames = this.npk - 1;
+      this.reset();
+    }
+    audio() { // all audio bytes in play order
+      const out = new Uint8Array(this.npk * this.aud);
+      for (let k = 0; k < this.npk; k++) out.set(this.rom.subarray(this.offsets[k], this.offsets[k] + this.aud), k * this.aud);
+      return out;
+    }
+    reset() {
+      this.k = 0;
+      if (this.gbc) { this.vram = [new Uint8Array(0x2000), new Uint8Array(0x2000)]; this.vram[0].set(this.rom.subarray(0x3000, 0x3800), 0x1800); this.vram[1].set(this.rom.subarray(0x3800, 0x4000), 0x1800); }
+      else this.buf = [new Uint8Array(this.T * 16), new Uint8Array(this.T * 16)];
+    }
+    // apply packet k (must be sequential), returns nothing
+    step() {
+      const k = this.k, rom = this.rom; let p = this.offsets[k] + this.aud;
+      if (this.mode === "normal") this.buf[k & 1].set(rom.subarray(p, p + this.T * 16));
+      else if (this.mode === "z") {
+        const b = this.buf[k & 1];
+        for (;;) { const cnt = rom[p++]; if (cnt === 0 || cnt === 0xFF) break; const off = rom[p] | rom[p + 1] << 8; p += 2; b.set(rom.subarray(p, p + cnt * 8), off); p += cnt * 8; }
+      } else {
+        this.pal = rom.subarray(p, p + 64); p += 64;
+        for (;;) { const cnt = rom[p++]; if (cnt === 0 || cnt === 0xFF) break; const lo = rom[p], hi = rom[p + 1]; p += 2;
+          const vb = (hi >> 6) & 1, addr = ((hi & 0xBF) << 8 | lo) - 0x8000; this.vram[vb].set(rom.subarray(p, p + cnt * 16), addr); p += cnt * 16; }
+        this.pals = this.pals || []; this.pals[k & 1] = this.pal;
+      }
+      this.k++;
+    }
+    seek(k) { if (k < this.k - 1) this.reset(); while (this.k <= k) this.step(); }
+    // render frame k (after seek(k)) into RGBA 160x144 using a 4-colour DMG palette (array of [r,g,b])
+    render(k, out, dmgPal) {
+      if (this.gbc) return this.renderGbc(k, out);
+      const b = this.buf[k & 1], W = 160, tw = this.tw, th = this.th;
+      const sx = this.scx >= 128 ? this.scx - 256 : this.scx, sy = this.scy >= 128 ? this.scy - 256 : this.scy;
+      const ox = this.mx * 8 - sx, oy = this.my * 8 - sy;
+      for (let i = 0; i < 160 * 144; i++) { const c = dmgPal[3]; out[i * 4] = c[0]; out[i * 4 + 1] = c[1]; out[i * 4 + 2] = c[2]; out[i * 4 + 3] = 255; }
+      for (let t = 0; t < tw * th; t++) { const tx = t % tw, ty = (t / tw) | 0;
+        for (let r = 0; r < 8; r++) { const lo = b[t * 16 + r * 2], hi = b[t * 16 + r * 2 + 1], y = oy + ty * 8 + r; if (y < 0 || y >= 144) continue;
+          for (let c = 0; c < 8; c++) { const x = ox + tx * 8 + c; if (x < 0 || x >= 160) continue; const v = ((lo >> (7 - c)) & 1) | (((hi >> (7 - c)) & 1) << 1), col = dmgPal[v], o = (y * W + x) * 4; out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2]; } } }
+    }
+    renderGbc(k, out) {
+      const buf = k & 1, v0 = this.vram[0], v1 = this.vram[1], mb = buf === 0 ? 0x1800 : 0x1C00, pal = this.pals[buf];
+      const col = new Uint8Array(96); for (let i = 0; i < 32; i++) { const v = pal[i * 2] | pal[i * 2 + 1] << 8; col[i * 3] = (v & 31) * 255 / 31 | 0; col[i * 3 + 1] = ((v >> 5) & 31) * 255 / 31 | 0; col[i * 3 + 2] = ((v >> 10) & 31) * 255 / 31 | 0; }
+      for (let y = 0; y < 144; y++) { const yy = (y + this.scy) & 255, ty = yy >> 3, py = yy & 7;
+        for (let x = 0; x < 160; x++) { const xx = (x + this.scx) & 255, tx = xx >> 3, px = xx & 7;
+          const ix = v0[mb + ty * 32 + tx], at = v1[mb + ty * 32 + tx], bk = (at >> 3) & 1, pl = at & 7;
+          const addr = buf === 0 ? ix * 16 : (ix < 128 ? 0x1000 + ix * 16 : 0x0800 + (ix - 128) * 16);
+          const vr = bk ? v1 : v0, lo = vr[addr + py * 2], hi = vr[addr + py * 2 + 1];
+          const c = ((lo >> (7 - px)) & 1) | (((hi >> (7 - px)) & 1) << 1), q = (pl * 4 + c) * 3, o = (y * 160 + x) * 4;
+          out[o] = col[q]; out[o + 1] = col[q + 1]; out[o + 2] = col[q + 2]; out[o + 3] = 255; } }
+    }
+  }
+
+  // ---------------------------------------------------------------- planning
+  // Estimated bytes per video frame (for the length estimate in the UI)
+  function frameBytes(mode, compress, tw, th, n) {
+    const T = tw * th;
+    if (mode === "gbc") { const full = 2 * LINES * n + 64 + T * 16 + 2 * th * 16 + 13; return compress ? 2 * LINES * n + 64 + (T * 16 + 2 * th * 16) * 0.5 + 40 : full; }
+    if (compress) return LINES * n + T * 16 * 0.45 + 30;
+    return LINES * n + T * 16;
+  }
+  function maxSeconds(mode, compress, tw, th, n) {
+    const fb = frameBytes(mode, compress, tw, th, n);
+    const frames = compress ? (MAX_BANKS - 1) * BANK * 0.985 / fb : (MAX_BANKS - 1) * Math.floor(BANK / fb) - 1;
+    return Math.max(0, frames) * n / LCD_FPS;
+  }
+
+  return { CPU_HZ, FRAME_CYCLES, LCD_FPS, LINES, BANK, MAX_BANKS, DMG_RATE, GBC_RATE, SILENCE,
+    chooseLayoutDMG, chooseLayoutGBC, zMaxTiles, gbcCap, gbcFullSlots, sizeOK, maxSeconds, frameBytes,
+    quantizeAudio, dmgIndices, percentile, DmgNormal, DmgZ, Gbc, RomReader, tilesFromIdx };
+})();
+if (typeof module !== "undefined") module.exports = VB;
+
+const PLAYERS = { dmg: "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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmgAAAJoAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAv7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v78=", gbc: "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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABNAE=" };
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const DMG_PAL = [[0x9B,0xBC,0x0F],[0x8B,0xAC,0x0F],[0x30,0x62,0x30],[0x0F,0x38,0x0F]];
+const FPS_N = { "60": 1, "30": 2, "20": 3, "15": 4, "12": 5, "10": 6 };
+const SIZES = { dmg: ["160x72", "152x80", "144x80", "128x88", "120x96", "128x80", "96x48", "80x64"],
+                gbc: ["160x144", "160x128", "160x112", "160x96", "160x88", "144x80", "120x72", "96x64"] };
+const MB = 1024 * 1024, ROM_MAX = 8 * MB;
+
+const S = { mode: "dmg", fps: "auto", size: "auto", fit: "fill", gamma: 1, dither: true, contrast: true,
+            compress: false, tol: 2, sound: true, mono: false, volume: 1, title: "", start: 0, dur: null,
+            file: null, meta: null, busy: false, rom: null, romName: "", reader: null };
+
+// ------------------------------------------------------------- helpers
+const fmtT = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, "0")}`; };
+const fmtMB = (b) => (b / MB).toLocaleString("de-DE", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + " MB";
+const num2 = (v) => Number(v).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function parseTime(s) { s = String(s).trim().replace(",", "."); if (!s) return 0; const p = s.split(":").map(Number); if (p.some(isNaN)) return NaN; return p.reduce((a, v) => a * 60 + v, 0); }
+function setStatus(t) { $("status").textContent = t; }
+function setNote(t, err) { const n = $("note"); n.textContent = t; n.classList.toggle("err", !!err); }
+
+// ------------------------------------------------------------- LCD
+const lcd = $("lcd"), ctx = lcd.getContext("2d"), img = ctx.createImageData(160, 144);
+function drawRGBA(px) { img.data.set(px); ctx.putImageData(img, 0, 0); }
+function drawIdx(idx, tw, th) { // DMG preview during conversion
+  const d = img.data, W = tw * 8, H = th * 8, x0 = (160 - W) >> 1, y0 = (144 - H) >> 1;
+  for (let i = 0; i < 160 * 144; i++) { const c = DMG_PAL[3]; d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 255; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = DMG_PAL[idx[y * W + x]], o = ((y0 + y) * 160 + x0 + x) * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; }
+  ctx.putImageData(img, 0, 0);
+}
+function drawRGB(rgb, tw, th) {
+  const d = img.data, W = tw * 8, H = th * 8, x0 = (160 - W) >> 1, y0 = (144 - H) >> 1;
+  d.fill(0); for (let i = 0; i < 160 * 144; i++) d[i * 4 + 3] = 255;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const s = (y * W + x) * 3, o = ((y0 + y) * 160 + x0 + x) * 4; d[o] = rgb[s]; d[o + 1] = rgb[s + 1]; d[o + 2] = rgb[s + 2]; }
+  ctx.putImageData(img, 0, 0);
+}
+// idle screen: slow ordered-dither plasma in the target's colours with a hint
+let idleOn = true, idleT = 0;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function idle() {
+  if (!idleOn) return;
+  const d = img.data, t = idleT;
+  for (let y = 0; y < 144; y++) for (let x = 0; x < 160; x++) {
+    const v = (Math.sin(x / 17 + t) + Math.sin(y / 13 - t * 0.7) + Math.sin((x + y) / 23 + t * 0.4) + 3) / 6;
+    const o = (y * 160 + x) * 4, th = (B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+    if (S.mode === "dmg") { const l = Math.min(3, Math.floor(v * 3 + th)); const c = DMG_PAL[3 - l]; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; }
+    else { const h = (v * 0.9 + x / 400 + t * 0.03) % 1, q = Math.floor(v * 3 + th) / 3;
+      d[o] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * h)); d[o + 1] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * (h - 0.33))); d[o + 2] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * (h - 0.66))); }
+    d[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.fillStyle = S.mode === "dmg" ? "#0F380F" : "#10142E"; ctx.fillRect(14, 58, 132, 28);
+  ctx.fillStyle = S.mode === "dmg" ? "#9BBC0F" : "#F4F1FF"; ctx.font = "bold 10px Archivo, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(S.file ? "Bereit zum Umwandeln" : "Video hier ablegen", 80, 70); ctx.font = "9px 'Instrument Sans', sans-serif";
+  ctx.fillText(S.mode === "dmg" ? "Game Boy, 4 Graustufen" : "Game Boy Color, 32 Farben", 80, 81);
+  if (!reduce) { idleT += 0.03; requestAnimationFrame(idle); }
+}
+
+// ------------------------------------------------------------- planning
+function aspect() { return S.meta ? S.meta.aspect : 16 / 9; }
+function clipLen() { if (!S.meta) return null; const rest = Math.max(0, S.meta.duration - S.start); return S.dur ? Math.min(S.dur, rest) : rest; }
+function layoutFor(n) {
+  if (S.size !== "auto") { const [w, h] = S.size.split("x").map(Number); return [w / 8, h / 8]; }
+  if (S.mode === "gbc") return VB.chooseLayoutGBC(aspect(), n);
+  return S.compress ? VB.chooseLayoutDMG(aspect(), n, VB.zMaxTiles(n)) : VB.chooseLayoutDMG(aspect(), n);
+}
+function plan() {
+  const len = clipLen();
+  let n;
+  if (S.fps !== "auto") n = FPS_N[S.fps];
+  else {
+    n = 3;
+    const want = len == null ? 0 : len;
+    if (S.mode === "gbc" && !S.compress) {
+      let best = null;
+      for (const m of [3, 4, 5, 6]) { const [tw, th] = layoutFor(m); if (!VB.sizeOK("gbc", false, tw, th, m)) continue;
+        const s = VB.maxSeconds("gbc", false, tw, th, m); if (s >= want) { best = [m, s]; break; } if (!best || s > best[1]) best = [m, s]; }
+      if (best) n = best[0];
+    } else {
+      while (n < 6) { const [tw, th] = layoutFor(n); if (VB.maxSeconds(S.mode, S.compress, tw, th, n) >= want) break; n++; }
+    }
+  }
+  const [tw, th] = layoutFor(n);
+  const ok = VB.sizeOK(S.mode, S.compress, tw, th, n);
+  const maxS = VB.maxSeconds(S.mode, S.compress, tw, th, n);
+  return { n, tw, th, ok, maxS, len, fps: VB.LCD_FPS / n };
+}
+
+// ------------------------------------------------------------- UI rendering
+function renderFps() {
+  const box = $("fps"); box.innerHTML = "";
+  for (const v of ["auto", "60", "30", "20", "15", "12", "10"]) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = v === "auto" ? "Auto" : v; b.dataset.v = v;
+    b.setAttribute("aria-pressed", String(S.fps === v)); b.onclick = () => { S.fps = v; update(); }; box.appendChild(b);
+  }
+}
+function renderSizes() {
+  const sel = $("size"), keep = S.size; sel.innerHTML = "";
+  const o = document.createElement("option"); o.value = "auto"; o.textContent = "Automatisch"; sel.appendChild(o);
+  const n = S.fps === "auto" ? 3 : FPS_N[S.fps];
+  for (const s of SIZES[S.mode]) { const [w, h] = s.split("x").map(Number); const op = document.createElement("option"); op.value = s;
+    const ok = VB.sizeOK(S.mode, S.compress, w / 8, h / 8, n);
+    op.textContent = `${w} × ${h}` + (ok ? "" : " (zu groß für diese Bildrate)"); op.disabled = !ok; sel.appendChild(op); }
+  sel.value = [...sel.options].some(x => x.value === keep && !x.disabled) ? keep : "auto"; S.size = sel.value;
+}
+function update() {
+  document.body.className = S.mode;
+  $("mode-dmg").setAttribute("aria-pressed", String(S.mode === "dmg"));
+  $("mode-gbc").setAttribute("aria-pressed", String(S.mode === "gbc"));
+  for (const b of $("fps").children) b.setAttribute("aria-pressed", String(b.dataset.v === S.fps));
+  for (const b of $("fit").children) b.setAttribute("aria-pressed", String(b.dataset.v === S.fit));
+  for (const b of $("chan").children) b.setAttribute("aria-pressed", String((b.dataset.v === "mono") === S.mono));
+  renderSizes();
+  $("tol").disabled = !S.compress;
+  $("snd-desc").textContent = S.mode === "gbc" ? "18396 Hz, 3 Bit" : "9198 Hz, 3 Bit";
+  $("gamma-o").textContent = num2(S.gamma); $("vol-o").textContent = num2(S.volume); $("tol-o").textContent = S.tol;
+  const p = plan();
+  const facts = [];
+  facts.push([`${p.tw * 8} × ${p.th * 8} Pixel`]);
+  facts.push([`${p.fps.toLocaleString("de-DE", { maximumFractionDigits: 1 })} Bilder/s`]);
+  facts.push([S.sound ? (S.mode === "gbc" ? "Ton 18,4 kHz" : "Ton 9,2 kHz") + (S.mono ? " mono" : " stereo") : "ohne Ton"]);
+  facts.push([(S.compress ? "ca. " : "") + `bis ${fmtT(p.maxS)} min in 8 MB`]);
+  if (p.len != null) {
+    if (p.len > p.maxS) facts.push([`Dein Ausschnitt ${fmtT(p.len)} wird gekürzt`, "warn"]);
+    else facts.push([`Dein Ausschnitt ${fmtT(p.len)} passt`, "ok"]);
+  }
+  if (!p.ok) facts.push(["Bildgröße passt nicht zur Bildrate", "warn"]);
+  const f = $("facts"); f.innerHTML = "";
+  for (const [t, c] of facts) { const s = document.createElement("span"); s.className = "chip" + (c ? " " + c : ""); s.textContent = t; f.appendChild(s); }
+  if (!S.rom && !S.busy) {
+    const est = p.len == null ? null : Math.min(ROM_MAX, Math.min(p.len, p.maxS) * p.fps * VB.frameBytes(S.mode, S.compress, p.tw, p.th, p.n) + 16384);
+    $("mem-label").textContent = "Geschätzte ROM-Größe";
+    $("mem-value").textContent = est == null ? "– von 8 MB" : `${S.compress ? "ca. " : ""}${fmtMB(est)} von 8 MB`;
+    $("mem-bar").firstElementChild.style.width = est == null ? "0" : (est / ROM_MAX * 100) + "%";
+    $("mem-bar").classList.remove("progress");
+  }
+  $("convert").disabled = !S.file || S.busy || !p.ok;
+  $("cli").textContent = cliCommand(p);
+  if (idleOn && reduce) idle();
+}
+function cliCommand(p) {
+  const a = ["python3 videoboy.py", JSON.stringify(S.file ? S.file.name : "video.mp4")];
+  if (S.mode === "gbc") a.push("--gbc");
+  if (S.compress) a.push("--compress"); if (S.compress && S.tol !== 2) a.push("--tolerance " + S.tol);
+  if (S.fps !== "auto") a.push("--fps " + S.fps);
+  if (S.size !== "auto") a.push("--size " + S.size);
+  if (S.fit === "fit") a.push("--fit");
+  if (S.start) a.push("--start " + fmtT(S.start)); if (S.dur) a.push("--duration " + S.dur);
+  if (S.gamma !== 1) a.push("--gamma " + S.gamma);
+  if (!S.dither) a.push("--no-dither"); if (S.mode === "dmg" && !S.contrast) a.push("--no-contrast");
+  if (!S.sound) a.push("--no-audio"); if (S.mono) a.push("--mono"); if (S.volume !== 1) a.push("--volume " + S.volume);
+  if (S.title) a.push("--title " + JSON.stringify(S.title));
+  return a.join(" ");
+}
+function invalidateRom() {
+  if (S.busy) return;
+  stopPlayback(); S.rom = null; S.reader = null; $("download").disabled = true; $("play").disabled = true; $("scrub").disabled = true;
+  $("time").textContent = "0:00 / 0:00";
+  if (!idleOn) { idleOn = true; idle(); }
+}
+
+// ------------------------------------------------------------- inputs
+function bindSeg(id, fn) { $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b || b.disabled) return; fn(b.dataset.v); invalidateRom(); update(); }); }
+$("mode-dmg").onclick = () => { if (S.busy) return; S.mode = "dmg"; invalidateRom(); update(); };
+$("mode-gbc").onclick = () => { if (S.busy) return; S.mode = "gbc"; invalidateRom(); update(); };
+bindSeg("fit", (v) => S.fit = v);
+bindSeg("chan", (v) => S.mono = v === "mono");
+$("fps").addEventListener("click", () => invalidateRom());
+$("size").onchange = (e) => { S.size = e.target.value; invalidateRom(); update(); };
+const onInput = (id, fn) => $(id).addEventListener("input", (e) => { fn(e.target); invalidateRom(); update(); });
+onInput("gamma", (t) => S.gamma = Number(t.value));
+onInput("vol", (t) => S.volume = Number(t.value));
+onInput("tol", (t) => S.tol = Number(t.value));
+onInput("dither", (t) => S.dither = t.checked);
+onInput("contrast", (t) => S.contrast = t.checked);
+onInput("compress", (t) => S.compress = t.checked);
+onInput("sound", (t) => S.sound = t.checked);
+onInput("title", (t) => S.title = t.value.trim());
+onInput("start", (t) => { const v = parseTime(t.value); S.start = isNaN(v) ? 0 : v; t.setAttribute("aria-invalid", String(isNaN(v))); });
+onInput("dur", (t) => { const v = Number(t.value); S.dur = v > 0 ? v : null; });
+$("copy-cli").onclick = async () => { try { await navigator.clipboard.writeText($("cli").textContent); $("copy-cli").textContent = "Kopiert"; } catch { $("copy-cli").textContent = "Kopieren nicht möglich"; } setTimeout(() => $("copy-cli").textContent = "Befehl kopieren", 1600); };
+
+// file handling
+$("pick").onclick = () => $("file").click();
+$("file").onchange = (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); };
+for (const el of [$("drop"), $("screen")]) {
+  el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drag"); });
+  el.addEventListener("dragleave", () => el.classList.remove("drag"));
+  el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("drag"); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+}
+async function loadFile(file) {
+  if (S.busy) return;
+  invalidateRom();
+  const url = URL.createObjectURL(file), v = document.createElement("video");
+  v.muted = true; v.preload = "metadata"; v.src = url;
+  try {
+    await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("format")); });
+  } catch {
+    URL.revokeObjectURL(url);
+    setNote("Dieses Videoformat kann dein Browser nicht abspielen. Wandle es vorher in MP4 (H.264) oder WebM um.", true);
+    return;
+  }
+  const w = v.videoWidth || 16, h = v.videoHeight || 9;
+  S.file = file; S.meta = { url, duration: v.duration, w, h, aspect: w / h, hasVideo: v.videoWidth > 0 };
+  if (!S.title) { const t = file.name.replace(/\.[^.]+$/, "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 15); $("title").placeholder = t || "VIDEOBOY"; }
+  $("file-meta").innerHTML = "";
+  const b = document.createElement("b"); b.textContent = file.name;
+  const s = document.createElement("span"); s.textContent = `${fmtT(v.duration)} min, ${w} × ${h} Pixel, ${fmtMB(file.size)}`;
+  $("file-meta").append(b, s);
+  setStatus("Video geladen. Einstellungen prüfen, dann ROM erstellen.");
+  setNote(S.meta.hasVideo ? "Das ROM spielt hier im Browser genau so ab, wie es der Game Boy zeigen wird." : "In dieser Datei ist kein Bild, nur Ton.", !S.meta.hasVideo);
+  update();
+}
+
+// ------------------------------------------------------------- audio pipeline
+async function prepareAudio(rate, start, len, mono) {
+  let decoded;
+  try {
+    const buf = await S.file.arrayBuffer();
+    decoded = await new OfflineAudioContext(2, 1, rate).decodeAudioData(buf);
+  } catch { return null; }
+  const s0 = Math.floor(start * rate), N = Math.max(1, Math.min(decoded.length - s0, Math.round(len * rate)));
+  if (N <= 1) return null;
+  // Surround (5.1 …): browsers deliver the channels in container-specific order, so an
+  // L/R mix can come out lopsided. All channels are mixed evenly to mono instead.
+  let source = decoded, surround = false;
+  if (decoded.numberOfChannels > 2) {
+    surround = true;
+    const m = new Float32Array(N), nc = decoded.numberOfChannels;
+    for (let c = 0; c < nc; c++) { const d = decoded.getChannelData(c); for (let j = 0; j < N; j++) m[j] += d[s0 + j] / nc; }
+    source = new AudioBuffer({ numberOfChannels: 2, length: N, sampleRate: rate });
+    source.copyToChannel(m, 0); source.copyToChannel(m, 1);
+  }
+  // pass 1: stereo, band limit and EQ
+  const lp = rate > 12000 ? 8000 : 4200, pres = rate > 12000 ? 3000 : 2500, shelf = rate > 12000 ? 5000 : 2800;
+  let ctx1 = new OfflineAudioContext(2, N, rate), sn = ctx1.createBufferSource(); sn.buffer = source;
+  const chain = [["highpass", 90, 0.707, 0], ["lowpass", lp, 0.707, 0], ["peaking", 250, 1, -2], ["peaking", pres, 1, 2]].map(([type, f, q, g]) => { const b = ctx1.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; b.gain.value = g; return b; });
+  const mix = ctx1.createGain(); mix.channelCount = 2; mix.channelCountMode = "explicit"; mix.channelInterpretation = "speakers";
+  sn.connect(mix); mix.connect(chain[0]); for (let i = 0; i < chain.length - 1; i++) chain[i].connect(chain[i + 1]); chain[chain.length - 1].connect(ctx1.destination);
+  if (surround) sn.start(); else sn.start(0, s0 / rate, N / rate);
+  const r1 = await ctx1.startRendering();
+  // loudness levelling (like ffmpeg dynaudnorm: per-frame peak gain, minimum filter, gaussian smoothing)
+  const L = r1.getChannelData(0), R = r1.getChannelData(1), fl = Math.max(1, Math.round(0.075 * rate)), nf = Math.ceil(N / fl);
+  const g = new Float64Array(nf);
+  for (let i = 0; i < nf; i++) { let pk = 0; for (let j = i * fl; j < Math.min(N, (i + 1) * fl); j++) pk = Math.max(pk, Math.abs(L[j]), Math.abs(R[j])); g[i] = Math.min(40, 0.9 / Math.max(pk, 1e-6)); }
+  const gm = new Float64Array(nf), gs = new Float64Array(nf), W = [0.054, 0.242, 0.399, 0.242, 0.054];
+  for (let i = 0; i < nf; i++) { let m = Infinity; for (let d = -3; d <= 3; d++) m = Math.min(m, g[Math.min(nf - 1, Math.max(0, i + d))]); gm[i] = m; }
+  for (let i = 0; i < nf; i++) { let s = 0; for (let d = -2; d <= 2; d++) s += W[d + 2] * gm[Math.min(nf - 1, Math.max(0, i + d))]; gs[i] = s; }
+  const mid = new AudioBuffer({ numberOfChannels: 2, length: N, sampleRate: rate }), mL = new Float32Array(N), mR = new Float32Array(N);
+  for (let j = 0; j < N; j++) { const fpos = j / fl - 0.5, i0 = Math.max(0, Math.floor(fpos)), i1 = Math.min(nf - 1, i0 + 1), a = Math.min(1, Math.max(0, fpos - i0)), gg = gs[i0] * (1 - a) + gs[i1] * a; mL[j] = L[j] * gg; mR[j] = R[j] * gg; }
+  mid.copyToChannel(mL, 0); mid.copyToChannel(mR, 1);
+  // pass 2: compressor + treble compensation for the Game Boy's sample-and-hold
+  const ctx2 = new OfflineAudioContext(2, N, rate), s2 = ctx2.createBufferSource(); s2.buffer = mid;
+  const comp = ctx2.createDynamicsCompressor(); comp.threshold.value = -26; comp.knee.value = 0; comp.ratio.value = 8; comp.attack.value = 0.002; comp.release.value = 0.06;
+  const hs = ctx2.createBiquadFilter(); hs.type = "highshelf"; hs.frequency.value = shelf; hs.gain.value = 2.5;
+  s2.connect(comp); comp.connect(hs); hs.connect(ctx2.destination); s2.start();
+  const r2 = await ctx2.startRendering();
+  let oL = r2.getChannelData(0).slice(), oR = r2.getChannelData(1).slice();
+  if (mono) { for (let j = 0; j < N; j++) { const m = (oL[j] + oR[j]) / 2; oL[j] = m; oR[j] = m; } }
+  return [oL, oR, surround];
+}
+
+// ------------------------------------------------------------- video capture
+function makeGrabber(v, W, H, fit) {
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const stage = document.createElement("canvas"); stage.width = W * 4; stage.height = H * 4;
+  const sc = stage.getContext("2d"); sc.imageSmoothingQuality = "high";
+  const out = document.createElement("canvas"); out.width = W; out.height = H;
+  const oc = out.getContext("2d", { willReadFrequently: true }); oc.imageSmoothingQuality = "high";
+  let sx = 0, sy = 0, sw = vw, sh = vh, dx = 0, dy = 0, dw = W * 4, dh = H * 4;
+  if (fit === "fill") { const s = Math.max(W / vw, H / vh); sw = W / s; sh = H / s; sx = (vw - sw) / 2; sy = (vh - sh) / 2; }
+  else { const s = Math.min(W / vw, H / vh); dw = vw * s * 4; dh = vh * s * 4; dx = (W * 4 - dw) / 2; dy = (H * 4 - dh) / 2; }
+  return () => {
+    sc.fillStyle = "#000"; sc.fillRect(0, 0, W * 4, H * 4);
+    sc.drawImage(v, sx, sy, sw, sh, dx, dy, dw, dh);
+    oc.drawImage(stage, 0, 0, W, H);
+    return oc.getImageData(0, 0, W, H).data;
+  };
+}
+function once(el, ev) { return new Promise((res) => el.addEventListener(ev, res, { once: true })); }
+async function seekTo(v, t) { if (Math.abs(v.currentTime - t) < 1e-4) return; v.currentTime = t; await once(v, "seeked"); }
+
+// contrast range for the DMG (1st/99th percentile of the brightness, like the command-line tool)
+async function measureContrast(v, grab, start, len, W, H) {
+  const vals = [], K = 24;
+  for (let i = 0; i < K; i++) {
+    await seekTo(v, start + len * (i + 0.5) / K);
+    const px = grab();
+    for (let j = 0; j < W * H; j += 3) vals.push(Math.round(0.299 * px[j * 4] + 0.587 * px[j * 4 + 1] + 0.114 * px[j * 4 + 2]) / 255);
+  }
+  return [VB.percentile(vals, 1), VB.percentile(vals, 99)];
+}
+
+// ------------------------------------------------------------- conversion
+let cancelFlag = false;
+$("cancel").onclick = () => { cancelFlag = true; };
+$("convert").onclick = convert;
+async function convert() {
+  if (!S.file || S.busy) return;
+  const p = plan(); if (!p.ok) return;
+  stopPlayback(); S.busy = true; cancelFlag = false; S.rom = null; S.reader = null;
+  $("convert").classList.add("hidden"); $("cancel").classList.remove("hidden"); $("download").disabled = true; $("play").disabled = true; $("scrub").disabled = true;
+  for (const el of document.querySelectorAll(".panel input, .panel select, .panel button, .modes button")) el.disabled = true;
+  $("led").classList.add("busy"); idleOn = false;
+  $("mem-bar").classList.add("progress"); $("mem-label").textContent = "Fortschritt";
+  const rate = S.mode === "gbc" ? VB.GBC_RATE : VB.DMG_RATE;
+  // without compression the length is exact; with compression the encoder stops when 8 MB are full
+  const W = p.tw * 8, H = p.th * 8, fps = p.fps, len = S.compress ? Math.min(p.len, 20 * 60) : Math.min(p.len, p.maxS + 1);
+  const total = Math.max(1, Math.floor(len * fps));
+  let worker = null; const cleanup = [];
+  try {
+    // audio first
+    let audio = null;
+    if (S.sound) { setStatus("Bereite den Ton auf …"); audio = await prepareAudio(rate, S.start, len, S.mono); if (!audio) setNote("In diesem Video ist kein Ton, den der Browser lesen kann. Das ROM wird stumm.", false); }
+    const surroundNote = audio && audio[2] ? " Der Surround-Ton des Videos wurde zu Mono gemischt." : "";
+    if (cancelFlag) throw new Error("cancel");
+    // video element
+    const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = S.meta.url;
+    v.setAttribute("aria-hidden", "true"); v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
+    document.body.appendChild(v); cleanup.push(() => v.remove());
+    if (v.readyState < 1) await once(v, "loadedmetadata");
+    const grab = makeGrabber(v, W, H, S.fit);
+    let lo = 0, hi = 1;
+    if (S.mode === "dmg" && S.contrast && S.meta.hasVideo) { setStatus("Messe Helligkeit …"); [lo, hi] = await measureContrast(v, grab, S.start, len, W, H); }
+    // worker
+    const wsrc = $("engine-src").textContent + "\n" + $("worker-src").textContent;
+    worker = new Worker(URL.createObjectURL(new Blob([wsrc], { type: "text/javascript" })));
+    const opts = { mode: S.mode, n: p.n, tw: p.tw, th: p.th, compress: S.compress, tol: S.tol, dither: S.dither, gamma: S.gamma,
+                   lo, hi: S.contrast ? hi : 1, volume: S.volume, title: S.title || $("title").placeholder || "VIDEOBOY" };
+    if (S.mode === "dmg" && !S.contrast) { opts.lo = 0; opts.hi = 1; }
+    if (audio) { opts.audioL = audio[0]; opts.audioR = audio[1]; }
+    let acked = 0, sent = 0, full = false, romBytes = 0, finished = null;
+    const result = new Promise((res, rej) => {
+      worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "ack") { acked = m.k; romBytes = m.bytes;
+          if (m.idx) drawIdx(m.idx, p.tw, p.th); if (m.rgb) drawRGB(m.rgb, p.tw, p.th);
+          $("mem-bar").firstElementChild.style.width = Math.min(100, acked / total * 100) + "%";
+          $("mem-value").textContent = `Bild ${acked} von ${total}`;
+          setStatus(`Wandle um ${Math.round(acked / total * 100)} %, ${fmtMB(romBytes)} im ROM`);
+        } else if (m.type === "full") { full = true; acked = m.k; }
+        else if (m.type === "rom") res(m);
+        else if (m.type === "error") rej(new Error(m.message));
+      };
+    });
+    worker.postMessage({ type: "start", opts, players: PLAYERS }, audio ? [audio[0].buffer, audio[1].buffer] : []);
+    const send = (px) => { if (full) return; worker.postMessage({ type: "frame", data: px.buffer }, [px.buffer]); sent++; };
+    setStatus("Wandle um …");
+    await captureFrames(v, grab, S.start, fps, total, send, () => sent - acked, () => cancelFlag || full);
+    if (cancelFlag) throw new Error("cancel");
+    worker.postMessage({ type: "finish" });
+    finished = await result;
+    const rom = new Uint8Array(finished.rom);
+    S.rom = rom; S.romName = (S.title || $("title").placeholder || "videoboy").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "videoboy";
+    S.reader = new VB.RomReader(rom);
+    window.__vb = { rom, frames: finished.frames, mode: S.mode };
+    const secs = finished.frames * p.n / VB.LCD_FPS;
+    $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM";
+    $("mem-value").textContent = `${fmtMB(rom.length)} von 8 MB`; $("mem-bar").firstElementChild.style.width = (rom.length / ROM_MAX * 100) + "%";
+    let msg = `Fertig: ${fmtT(Math.round(secs))} min, ${finished.frames} Bilder` + (S.compress ? `, ${Math.round(finished.ratio * 100)} % der Kacheln übertragen` : "");
+    if (full || finished.frames < Math.floor(p.len * fps) - 1) msg += `. Das Video war zu lang und wurde auf ${fmtT(secs)} gekürzt.`;
+    else msg += ".";
+    msg += surroundNote;
+    setStatus(`Fertig. ${fmtMB(rom.length)} ${S.mode === "gbc" ? ".gbc" : ".gb"}-ROM`);
+    setNote(msg, false);
+    $("download").disabled = false; $("play").disabled = false; $("scrub").disabled = false;
+    $("download").textContent = downloads ? "ROM herunterladen (.zip)" : "ROM herunterladen";
+    playOffset = 0; showFrame(-1);
+    $("scrub").value = 0; $("time").textContent = `0:00 / ${fmtT(totalSecs())}`;
+  } catch (e) {
+    if (String(e.message) === "cancel") { setStatus("Abgebrochen."); setNote("Die Umwandlung wurde abgebrochen.", false); }
+    else { setStatus("Fehler."); setNote("Das hat nicht geklappt: " + String(e.message).split("\n")[0], true); }
+    idleOn = true; idle();
+  } finally {
+    if (worker) worker.terminate();
+    for (const f of cleanup) f();
+    S.busy = false; $("led").classList.remove("busy");
+    $("convert").classList.remove("hidden"); $("cancel").classList.add("hidden");
+    for (const el of document.querySelectorAll(".panel input, .panel select, .panel button, .modes button")) el.disabled = false;
+    update();
+    if (S.rom) { $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM"; $("mem-value").textContent = `${fmtMB(S.rom.length)} von 8 MB`; $("mem-bar").firstElementChild.style.width = (S.rom.length / ROM_MAX * 100) + "%"; }
+  }
+}
+
+// Plays the video and grabs the frame shown at every target time.
+async function captureFrames(v, grab, start, fps, total, emit, pending, stop) {
+  let k = 0;
+  const blackFrame = () => new Uint8ClampedArray(grab().length);
+  if (!S.meta.hasVideo) { while (k < total && !stop()) { emit(blackFrame()); k++; if (pending() > 16) await new Promise(r => setTimeout(r, 20)); } return; }
+  const end = start + total / fps;
+  if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) { // fallback: seek frame by frame
+    for (; k < total && !stop(); k++) { await seekTo(v, Math.min(v.duration - 0.001, start + k / fps)); emit(grab()); while (pending() > 12) await new Promise(r => setTimeout(r, 10)); }
+    return;
+  }
+  await seekTo(v, start);
+  let prev = null, lastPresented = -1, calm = 0, rate = 1.5;
+  await new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; v.pause(); resolve(); };
+    const flushTo = (t) => { while (k < total && start + k / fps < t) { emit(prev.slice()); k++; } };
+    const cb = async (now, meta) => {
+      if (done) return;
+      if (stop()) return finish();
+      const cur = grab();
+      if (!prev) prev = cur;
+      flushTo(meta.mediaTime);
+      prev = cur;
+      if (lastPresented >= 0 && meta.presentedFrames - lastPresented > 1) { calm = 0; if (rate > 1) { rate = Math.max(1, rate * 0.75); v.playbackRate = rate; } }
+      else if (++calm > 90 && rate < 4 && pending() < 6) { calm = 0; rate = Math.min(4, rate * 1.25); v.playbackRate = rate; }
+      lastPresented = meta.presentedFrames;
+      if (k >= total || meta.mediaTime >= end) { flushTo(Infinity); return finish(); }
+      if (pending() > 24) { v.pause(); while (pending() > 6 && !stop()) await new Promise(r => setTimeout(r, 15)); if (stop()) return finish(); v.play().catch(() => {}); }
+      v.requestVideoFrameCallback(cb);
+    };
+    v.addEventListener("ended", () => { if (prev) flushTo(Infinity); else { while (k < total) { emit(blackFrame()); k++; } } finish(); }, { once: true });
+    v.playbackRate = rate;
+    v.requestVideoFrameCallback(cb);
+    v.play().catch(() => { finish(); });
+  });
+  while (k < total && !stop() && prev) { emit(prev.slice()); k++; }
+}
+
+// ------------------------------------------------------------- playback (decodes the ROM itself)
+let actx = null, asrc = null, playing = false, playStart = 0, playOffset = 0, raf = 0, audioBuf = null;
+const frameBuf = new Uint8ClampedArray(160 * 144 * 4);
+function periodSecs() { return S.reader.n / VB.LCD_FPS; }
+function totalSecs() { return S.reader.npk * periodSecs(); }
+function showFrame(k) {
+  const r = S.reader; if (!r) return;
+  if (k < 0) { frameBuf.fill(0); for (let i = 0; i < 160 * 144; i++) { const c = r.gbc ? [0, 0, 0] : DMG_PAL[3]; frameBuf[i * 4] = c[0]; frameBuf[i * 4 + 1] = c[1]; frameBuf[i * 4 + 2] = c[2]; frameBuf[i * 4 + 3] = 255; } }
+  else { k = Math.min(k, r.frames - 1); r.seek(k); r.render(k, frameBuf, DMG_PAL); }
+  drawRGBA(frameBuf);
+}
+function tick() {
+  const t = playOffset + (actx.currentTime - playStart);
+  const T = totalSecs();
+  if (t >= T) { stopPlayback(); playOffset = 0; showFrame(S.reader.frames - 1); return; }
+  showFrame(Math.floor(t / periodSecs()) - 1);
+  $("scrub").value = Math.round(t / T * 1000); $("time").textContent = `${fmtT(t)} / ${fmtT(T)}`;
+  raf = requestAnimationFrame(tick);
+}
+function buildAudio() {
+  const r = S.reader, a = r.audio(), buf = actx.createBuffer(2, a.length, r.rate), L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (let i = 0; i < a.length; i++) { L[i] = ((a[i] >> 4) & 7) / 3.5 - 1; R[i] = (a[i] & 7) / 3.5 - 1; }
+  return buf;
+}
+async function startPlayback() {
+  if (!S.reader) return;
+  try { actx = actx || new AudioContext(); await actx.resume(); } catch { setNote("Der Browser lässt hier keine Tonwiedergabe zu.", true); return; }
+  if (!audioBuf || audioBuf.__rom !== S.rom) { audioBuf = buildAudio(); audioBuf.__rom = S.rom; }
+  asrc = actx.createBufferSource(); asrc.buffer = audioBuf;
+  const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 20;
+  const gain = actx.createGain(); gain.gain.value = 0.6;
+  asrc.connect(hp); hp.connect(gain); gain.connect(actx.destination);
+  if (playOffset >= totalSecs()) playOffset = 0;
+  asrc.start(0, playOffset); playStart = actx.currentTime; playing = true; idleOn = false;
+  $("play-icon").innerHTML = '<path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/>'; $("play").setAttribute("aria-label", "Pause");
+  setStatus("Wiedergabe aus dem fertigen ROM"); $("led").classList.add("on");
+  tick();
+}
+function stopPlayback() {
+  if (asrc) { try { asrc.stop(); } catch {} asrc = null; }
+  if (playing && actx) playOffset += actx.currentTime - playStart;
+  playing = false; cancelAnimationFrame(raf);
+  $("play-icon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>'; $("play").setAttribute("aria-label", "Abspielen");
+}
+$("play").onclick = () => playing ? stopPlayback() : startPlayback();
+$("scrub").oninput = (e) => {
+  if (!S.reader) return;
+  const was = playing; stopPlayback();
+  playOffset = e.target.value / 1000 * totalSecs();
+  showFrame(Math.floor(playOffset / periodSecs()) - 1);
+  $("time").textContent = `${fmtT(playOffset)} / ${fmtT(totalSecs())}`;
+  if (was) startPlayback();
+};
+
+// ------------------------------------------------------------- download
+let downloads = null;
+try { if (window.claude && window.claude.use) window.claude.use("downloads").then((d) => { downloads = d; if (S.rom) $("download").textContent = d ? "ROM herunterladen (.zip)" : "ROM herunterladen"; }).catch(() => {}); } catch {}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zip(name, data) { // single file, stored
+  const nb = new TextEncoder().encode(name), crc = crc32(data), lh = new DataView(new ArrayBuffer(30)), cd = new DataView(new ArrayBuffer(46)), ed = new DataView(new ArrayBuffer(22));
+  lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nb.length, true);
+  cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true); cd.setUint16(28, nb.length, true);
+  ed.setUint32(0, 0x06054b50, true); ed.setUint16(8, 1, true); ed.setUint16(10, 1, true); ed.setUint32(12, 46 + nb.length, true); ed.setUint32(16, 30 + nb.length + data.length, true);
+  return new Blob([lh, nb, data, cd, nb, ed]);
+}
+$("download").onclick = async () => {
+  if (!S.rom) return;
+  const ext = S.reader.gbc ? ".gbc" : ".gb", name = S.romName + ext;
+  if (downloads) {
+    try { await downloads.save({ filename: S.romName + ".zip", data: zip(name, S.rom) }); setNote(`Gespeichert: ${S.romName}.zip mit ${name}. Entpacken und aufs Flashcart kopieren.`); }
+    catch (e) { if (e && e.code === "declined") setNote("Download abgebrochen."); else setNote("Download hier nicht möglich (" + (e && e.code || "Fehler") + ").", true); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([S.rom])); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setNote(`Heruntergeladen: ${name}`);
+};
+
+renderFps(); update(); idle();
+})();
+</script>
+</body>
+</html>

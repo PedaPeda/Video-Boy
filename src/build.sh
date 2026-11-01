@@ -20,3 +20,4 @@ open('../videoboy.py', 'w').write(s)
 PY
 rm -f player.o player.gb player_gbc.o player_gbc.gb
 echo "videoboy.py updated."
+python3 ../web/build.py

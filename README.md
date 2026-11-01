@@ -16,11 +16,33 @@ Footage: "Big Buck Bunny", see credits below.*
 
 ## Requirements
 
+For the command-line tool you need the following. The [browser app](#browser-app-no-installation) needs nothing but a browser.
+
 * Python 3.8+ with `numpy` (`pip install numpy`)
 * `ffmpeg` and `ffprobe` in your PATH (on Windows, placing `ffmpeg.exe` and `ffprobe.exe`
   next to `videoboy.py` works too)
 * For real hardware: a flash cart with **MBC5** support, e.g. EverDrive GB X series, EZ-Flash Junior
   or an 8 MB MBC5 repro flash cart. Long videos need a cart that takes 8 MB ROMs.
+
+## Browser app (no installation)
+
+`web/index.html` is the same converter as a single web page: drop in a video, choose the settings, watch the
+Game Boy screen while it converts, play the finished ROM with sound and download it. Everything runs locally in
+the browser; the video is not uploaded anywhere, and Python or ffmpeg are not needed.
+
+![VIDEO BOY browser app](web/screenshot.png)
+
+* Open `web/index.html` in Chrome, Edge or Firefox (double-click is enough), or host it with GitHub Pages.
+* Both targets (Game Boy and Game Boy Color) and all options of the command-line tool, plus a live estimate of
+  how much fits into 8 MB and the matching `videoboy.py` command.
+* The preview decodes the finished ROM itself, so what you see and hear is exactly what the Game Boy will show.
+* Game Boy ROMs are byte-identical to the ones `videoboy.py` builds from the same frames. The audio filters are
+  re-created with the Web Audio API, so the sound differs slightly from the command-line tool.
+* Surround audio (5.1) is mixed down to mono, because browsers deliver the channels in a container-specific order.
+* The browser plays the video internally while converting: keep the tab in the foreground.
+* Video formats: whatever the browser can play (MP4/H.264 and WebM in all major browsers).
+
+The app is built from `web/src/` with `python3 web/build.py` (also run by `src/build.sh`).
 
 ## Usage
 
