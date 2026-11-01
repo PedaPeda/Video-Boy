@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Video Boy Konverter</title>
+<title>Video Boy Converter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,100..125,400..900;1,100..125,400..900&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -177,9 +177,9 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
   <header>
     <div class="mark">
       <h1>Video Boy</h1>
-      <p>Macht aus deinem Video ein ROM für den Game Boy, mit Bild und Ton. Alles läuft hier im Browser, dein Video wird nirgendwo hochgeladen.</p>
+      <p>Turns your video into a Game Boy ROM with picture and sound. Everything runs here in your browser; your video is not uploaded anywhere.</p>
     </div>
-    <div class="modes" role="group" aria-label="Zielgerät">
+    <div class="modes" role="group" aria-label="Target console">
       <button type="button" id="mode-dmg" aria-pressed="true"><span class="swatch dmg"></span>Game Boy</button>
       <button type="button" id="mode-gbc" aria-pressed="false"><span class="swatch gbc"></span>Game Boy Color</button>
     </div>
@@ -187,29 +187,29 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
 
   <div class="main">
     <!-- ================= console ================= -->
-    <section class="console" aria-label="Vorschau">
+    <section class="console" aria-label="Preview">
       <div class="bezel">
-        <div class="bezel-top"><span class="led on" id="led"></span><span class="status" id="status">Bereit. Leg ein Video auf den Bildschirm.</span></div>
-        <div class="screen" id="screen"><canvas id="lcd" width="160" height="144" aria-label="Game-Boy-Bildschirm"></canvas></div>
+        <div class="bezel-top"><span class="led on" id="led"></span><span class="status" id="status">Ready. Drop a video onto the screen.</span></div>
+        <div class="screen" id="screen"><canvas id="lcd" width="160" height="144" aria-label="Game Boy screen"></canvas></div>
       </div>
       <div class="transport">
-        <button class="round" id="play" type="button" aria-label="Abspielen" disabled>
+        <button class="round" id="play" type="button" aria-label="Play" disabled>
           <svg viewBox="0 0 24 24" id="play-icon"><path d="M7 4.5v15l13-7.5z"/></svg>
         </button>
         <input type="range" id="scrub" min="0" max="1000" value="0" step="1" aria-label="Position" disabled>
         <span class="time" id="time">0:00 / 0:00</span>
       </div>
       <div class="meter">
-        <div class="meter-head"><span id="mem-label">Speicher im ROM</span><b id="mem-value">0 von 8 MB</b></div>
+        <div class="meter-head"><span id="mem-label">ROM memory</span><b id="mem-value">0 of 8 MB</b></div>
         <div class="bar" id="mem-bar"><i></i></div>
       </div>
       <div class="facts" id="facts"></div>
       <div class="actions">
-        <button class="btn" id="convert" type="button" disabled>ROM erstellen</button>
-        <button class="btn second hidden" id="cancel" type="button">Abbrechen</button>
-        <button class="btn second" id="download" type="button" disabled>ROM herunterladen</button>
+        <button class="btn" id="convert" type="button" disabled>Create ROM</button>
+        <button class="btn second hidden" id="cancel" type="button">Cancel</button>
+        <button class="btn second" id="download" type="button" disabled>Download ROM</button>
       </div>
-      <p class="note" id="note">Das ROM spielt hier im Browser genau so ab, wie es der Game Boy zeigen wird.</p>
+      <p class="note" id="note">The ROM plays here exactly as the Game Boy will show it.</p>
     </section>
 
     <!-- ================= settings ================= -->
@@ -217,79 +217,79 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
       <section class="group" aria-labelledby="h-video">
         <h2 id="h-video">Video</h2>
         <div class="drop" id="drop">
-          <button class="btn second" type="button" id="pick">Video auswählen</button>
+          <button class="btn second" type="button" id="pick">Choose video</button>
           <input type="file" id="file" accept="video/*,audio/*,.mkv,.mov,.webm,.mp4,.m4v" class="hidden">
-          <div class="file-meta" id="file-meta"><b>Noch kein Video</b><span>MP4, WebM oder MOV, oder hier ablegen</span></div>
+          <div class="file-meta" id="file-meta"><b>No video yet</b><span>MP4, WebM or MOV, or drop it here</span></div>
         </div>
         <div class="row">
-          <span class="lbl">Ausschnitt</span>
+          <span class="lbl">Clip</span>
           <div class="pair">
             <div><input type="text" id="start" value="0:00" inputmode="numeric" aria-describedby="start-h" style="max-width:110px"><small id="start-h">Start (min:s)</small></div>
-            <div><input type="number" id="dur" min="1" step="1" placeholder="bis Ende" aria-describedby="dur-h" style="max-width:110px"><small id="dur-h">Länge in s</small></div>
+            <div><input type="number" id="dur" min="1" step="1" placeholder="to end" aria-describedby="dur-h" style="max-width:110px"><small id="dur-h">Length in s</small></div>
           </div>
         </div>
       </section>
 
       <section class="group" aria-labelledby="h-pic">
-        <h2 id="h-pic">Bild</h2>
+        <h2 id="h-pic">Picture</h2>
         <div class="row">
-          <span class="lbl" id="fps-l">Bildrate</span>
+          <span class="lbl" id="fps-l">Frame rate</span>
           <div class="seg" id="fps" role="group" aria-labelledby="fps-l"></div>
         </div>
         <div class="row">
-          <label for="size">Bildgröße</label>
+          <label for="size">Picture size</label>
           <select id="size"></select>
         </div>
         <div class="row">
-          <span class="lbl" id="fit-l">Seitenverhältnis</span>
+          <span class="lbl" id="fit-l">Aspect ratio</span>
           <div class="seg" id="fit" role="group" aria-labelledby="fit-l">
-            <button type="button" data-v="fill" aria-pressed="true">Füllen</button>
-            <button type="button" data-v="fit" aria-pressed="false">Ganzes Bild</button>
+            <button type="button" data-v="fill" aria-pressed="true">Fill</button>
+            <button type="button" data-v="fit" aria-pressed="false">Whole picture</button>
           </div>
         </div>
         <div class="row">
-          <label for="gamma">Helligkeit</label>
+          <label for="gamma">Brightness</label>
           <div class="slider"><input type="range" id="gamma" min="0.5" max="1.6" step="0.05" value="1"><output id="gamma-o">1,00</output></div>
         </div>
         <div class="row">
-          <span class="lbl">Feinheiten</span>
+          <span class="lbl">Details</span>
           <div class="pair">
-            <label class="switch"><input type="checkbox" id="dither" checked> Raster-Dithering</label>
-            <span class="only-dmg"><label class="switch"><input type="checkbox" id="contrast" checked> Kontrast automatisch</label></span>
+            <label class="switch"><input type="checkbox" id="dither" checked> Dithering</label>
+            <span class="only-dmg"><label class="switch"><input type="checkbox" id="contrast" checked> Auto contrast</label></span>
           </div>
         </div>
       </section>
 
       <section class="group" aria-labelledby="h-comp">
-        <h2 id="h-comp">Kompression</h2>
+        <h2 id="h-comp">Compression</h2>
         <div class="row">
-          <span class="lbl">Mehr Video pro ROM</span>
-          <label class="switch"><input type="checkbox" id="compress"> Nur geänderte Bildteile speichern</label>
+          <span class="lbl">More video per ROM</span>
+          <label class="switch"><input type="checkbox" id="compress"> Store only the parts that change</label>
         </div>
         <div class="row">
-          <label for="tol">Toleranz</label>
+          <label for="tol">Tolerance</label>
           <div>
             <div class="slider"><input type="range" id="tol" min="0" max="8" step="1" value="2"><output id="tol-o">2</output></div>
-            <span class="hint">Pixel pro 8×8-Kachel, die abweichen dürfen. 0 ist verlustfrei, höher bringt mehr Länge.</span>
+            <span class="hint">Pixels per 8×8 tile that may differ. 0 is lossless, higher gives more length.</span>
           </div>
         </div>
       </section>
 
       <section class="group" aria-labelledby="h-snd">
-        <h2 id="h-snd">Ton</h2>
+        <h2 id="h-snd">Sound</h2>
         <div class="row">
-          <span class="lbl">Ton</span>
-          <label class="switch"><input type="checkbox" id="sound" checked> <span id="snd-desc">9198 Hz, 3 Bit</span></label>
+          <span class="lbl">Sound</span>
+          <label class="switch"><input type="checkbox" id="sound" checked> <span id="snd-desc">9198 Hz, 3-bit</span></label>
         </div>
         <div class="row">
-          <span class="lbl" id="ch-l">Kanäle</span>
+          <span class="lbl" id="ch-l">Channels</span>
           <div class="seg" id="chan" role="group" aria-labelledby="ch-l">
             <button type="button" data-v="stereo" aria-pressed="true">Stereo</button>
             <button type="button" data-v="mono" aria-pressed="false">Mono</button>
           </div>
         </div>
         <div class="row">
-          <label for="vol">Lautstärke</label>
+          <label for="vol">Volume</label>
           <div class="slider"><input type="range" id="vol" min="0.5" max="2" step="0.05" value="1"><output id="vol-o">1,00</output></div>
         </div>
       </section>
@@ -297,20 +297,20 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
       <section class="group" aria-labelledby="h-rom">
         <h2 id="h-rom">ROM</h2>
         <div class="row">
-          <label for="title">Titel</label>
+          <label for="title">Title</label>
           <input type="text" id="title" maxlength="15" placeholder="VIDEOBOY">
         </div>
         <details>
-          <summary>Befehl für die Kommandozeile</summary>
+          <summary>Command-line equivalent</summary>
           <pre id="cli"></pre>
-          <button class="btn second" type="button" id="copy-cli" style="margin-top:10px">Befehl kopieren</button>
+          <button class="btn second" type="button" id="copy-cli" style="margin-top:10px">Copy command</button>
         </details>
       </section>
 
       <section class="help" aria-labelledby="h-help">
-        <h2 id="h-help" style="margin:0;font:italic 800 19px/1.2 var(--f-display);font-variation-settings:'wdth' 112">Auf den Game Boy bringen</h2>
-        <p>Kopiere das ROM auf ein Flashcart mit MBC5-Unterstützung, zum Beispiel EverDrive GB, EZ-Flash Junior oder ein 8-MB-Repro-Flashcart. Game-Boy-ROMs laufen auf Game Boy, Pocket, Color und Advance, Game-Boy-Color-ROMs auf Color und Advance.</p>
-        <p>Am Gerät: <kbd>START</kbd> pausiert, <kbd>SELECT</kbd> startet von vorne. Lass diesen Tab während der Umwandlung offen, im Hintergrund bremst der Browser das Abspielen.</p>
+        <h2 id="h-help" style="margin:0;font:italic 800 19px/1.2 var(--f-display);font-variation-settings:'wdth' 112">Getting it onto a Game Boy</h2>
+        <p>Copy the ROM onto a flash cart with MBC5 support, for example an EverDrive GB, EZ-Flash Junior or an 8 MB repro flash cart. Game Boy ROMs run on the Game Boy, Pocket, Color and Advance; Game Boy Color ROMs run on the Color and Advance.</p>
+        <p>On the console: <kbd>START</kbd> pauses, <kbd>SELECT</kbd> restarts. Keep this tab in the foreground while converting; in the background the browser slows down playback.</p>
       </section>
     </div>
   </div>
@@ -388,8 +388,8 @@ const S = { mode: "dmg", fps: "auto", size: "auto", fit: "fill", gamma: 1, dithe
 
 // ------------------------------------------------------------- helpers
 const fmtT = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, "0")}`; };
-const fmtMB = (b) => (b / MB).toLocaleString("de-DE", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + " MB";
-const num2 = (v) => Number(v).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtMB = (b) => (b / MB).toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + " MB";
+const num2 = (v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function parseTime(s) { s = String(s).trim().replace(",", "."); if (!s) return 0; const p = s.split(":").map(Number); if (p.some(isNaN)) return NaN; return p.reduce((a, v) => a * 60 + v, 0); }
 function setStatus(t) { $("status").textContent = t; }
 function setNote(t, err) { const n = $("note"); n.textContent = t; n.classList.toggle("err", !!err); }
@@ -427,8 +427,8 @@ function idle() {
   ctx.putImageData(img, 0, 0);
   ctx.fillStyle = S.mode === "dmg" ? "#0F380F" : "#10142E"; ctx.fillRect(14, 58, 132, 28);
   ctx.fillStyle = S.mode === "dmg" ? "#9BBC0F" : "#F4F1FF"; ctx.font = "bold 10px Archivo, sans-serif"; ctx.textAlign = "center";
-  ctx.fillText(S.file ? "Bereit zum Umwandeln" : "Video hier ablegen", 80, 70); ctx.font = "9px 'Instrument Sans', sans-serif";
-  ctx.fillText(S.mode === "dmg" ? "Game Boy, 4 Graustufen" : "Game Boy Color, 32 Farben", 80, 81);
+  ctx.fillText(S.file ? "Ready to convert" : "Drop a video here", 80, 70); ctx.font = "9px 'Instrument Sans', sans-serif";
+  ctx.fillText(S.mode === "dmg" ? "Game Boy, 4 shades" : "Game Boy Color, 32 colours", 80, 81);
   if (!reduce) { idleT += 0.03; requestAnimationFrame(idle); }
 }
 
@@ -472,11 +472,11 @@ function renderFps() {
 }
 function renderSizes() {
   const sel = $("size"), keep = S.size; sel.innerHTML = "";
-  const o = document.createElement("option"); o.value = "auto"; o.textContent = "Automatisch"; sel.appendChild(o);
+  const o = document.createElement("option"); o.value = "auto"; o.textContent = "Automatic"; sel.appendChild(o);
   const n = S.fps === "auto" ? 3 : FPS_N[S.fps];
   for (const s of SIZES[S.mode]) { const [w, h] = s.split("x").map(Number); const op = document.createElement("option"); op.value = s;
     const ok = VB.sizeOK(S.mode, S.compress, w / 8, h / 8, n);
-    op.textContent = `${w} × ${h}` + (ok ? "" : " (zu groß für diese Bildrate)"); op.disabled = !ok; sel.appendChild(op); }
+    op.textContent = `${w} × ${h}` + (ok ? "" : " (too big for this frame rate)"); op.disabled = !ok; sel.appendChild(op); }
   sel.value = [...sel.options].some(x => x.value === keep && !x.disabled) ? keep : "auto"; S.size = sel.value;
 }
 function update() {
@@ -488,25 +488,25 @@ function update() {
   for (const b of $("chan").children) b.setAttribute("aria-pressed", String((b.dataset.v === "mono") === S.mono));
   renderSizes();
   $("tol").disabled = !S.compress;
-  $("snd-desc").textContent = S.mode === "gbc" ? "18396 Hz, 3 Bit" : "9198 Hz, 3 Bit";
+  $("snd-desc").textContent = S.mode === "gbc" ? "18396 Hz, 3-bit" : "9198 Hz, 3-bit";
   $("gamma-o").textContent = num2(S.gamma); $("vol-o").textContent = num2(S.volume); $("tol-o").textContent = S.tol;
   const p = plan();
   const facts = [];
-  facts.push([`${p.tw * 8} × ${p.th * 8} Pixel`]);
-  facts.push([`${p.fps.toLocaleString("de-DE", { maximumFractionDigits: 1 })} Bilder/s`]);
-  facts.push([S.sound ? (S.mode === "gbc" ? "Ton 18,4 kHz" : "Ton 9,2 kHz") + (S.mono ? " mono" : " stereo") : "ohne Ton"]);
-  facts.push([(S.compress ? "ca. " : "") + `bis ${fmtT(p.maxS)} min in 8 MB`]);
+  facts.push([`${p.tw * 8} × ${p.th * 8} pixels`]);
+  facts.push([`${p.fps.toLocaleString("en-US", { maximumFractionDigits: 1 })} fps`]);
+  facts.push([S.sound ? (S.mode === "gbc" ? "Sound 18.4 kHz" : "Sound 9.2 kHz") + (S.mono ? " mono" : " stereo") : "no sound"]);
+  facts.push([(S.compress ? "approx. " : "") + `up to ${fmtT(p.maxS)} min in 8 MB`]);
   if (p.len != null) {
-    if (p.len > p.maxS) facts.push([`Dein Ausschnitt ${fmtT(p.len)} wird gekürzt`, "warn"]);
-    else facts.push([`Dein Ausschnitt ${fmtT(p.len)} passt`, "ok"]);
+    if (p.len > p.maxS) facts.push([`Your ${fmtT(p.len)} clip will be cut`, "warn"]);
+    else facts.push([`Your ${fmtT(p.len)} clip fits`, "ok"]);
   }
-  if (!p.ok) facts.push(["Bildgröße passt nicht zur Bildrate", "warn"]);
+  if (!p.ok) facts.push(["Picture size does not fit this frame rate", "warn"]);
   const f = $("facts"); f.innerHTML = "";
   for (const [t, c] of facts) { const s = document.createElement("span"); s.className = "chip" + (c ? " " + c : ""); s.textContent = t; f.appendChild(s); }
   if (!S.rom && !S.busy) {
     const est = p.len == null ? null : Math.min(ROM_MAX, Math.min(p.len, p.maxS) * p.fps * VB.frameBytes(S.mode, S.compress, p.tw, p.th, p.n) + 16384);
-    $("mem-label").textContent = "Geschätzte ROM-Größe";
-    $("mem-value").textContent = est == null ? "– von 8 MB" : `${S.compress ? "ca. " : ""}${fmtMB(est)} von 8 MB`;
+    $("mem-label").textContent = "Estimated ROM size";
+    $("mem-value").textContent = est == null ? "– of 8 MB" : `${S.compress ? "approx. " : ""}${fmtMB(est)} of 8 MB`;
     $("mem-bar").firstElementChild.style.width = est == null ? "0" : (est / ROM_MAX * 100) + "%";
     $("mem-bar").classList.remove("progress");
   }
@@ -554,7 +554,7 @@ onInput("sound", (t) => S.sound = t.checked);
 onInput("title", (t) => S.title = t.value.trim());
 onInput("start", (t) => { const v = parseTime(t.value); S.start = isNaN(v) ? 0 : v; t.setAttribute("aria-invalid", String(isNaN(v))); });
 onInput("dur", (t) => { const v = Number(t.value); S.dur = v > 0 ? v : null; });
-$("copy-cli").onclick = async () => { try { await navigator.clipboard.writeText($("cli").textContent); $("copy-cli").textContent = "Kopiert"; } catch { $("copy-cli").textContent = "Kopieren nicht möglich"; } setTimeout(() => $("copy-cli").textContent = "Befehl kopieren", 1600); };
+$("copy-cli").onclick = async () => { try { await navigator.clipboard.writeText($("cli").textContent); $("copy-cli").textContent = "Copied"; } catch { $("copy-cli").textContent = "Copying is not allowed here"; } setTimeout(() => $("copy-cli").textContent = "Copy command", 1600); };
 
 // file handling
 $("pick").onclick = () => $("file").click();
@@ -573,7 +573,7 @@ async function loadFile(file) {
     await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("format")); });
   } catch {
     URL.revokeObjectURL(url);
-    setNote("Dieses Videoformat kann dein Browser nicht abspielen. Wandle es vorher in MP4 (H.264) oder WebM um.", true);
+    setNote("Your browser cannot play this video format. Convert it to MP4 (H.264) or WebM first.", true);
     return;
   }
   const w = v.videoWidth || 16, h = v.videoHeight || 9;
@@ -581,10 +581,10 @@ async function loadFile(file) {
   if (!S.title) { const t = file.name.replace(/\.[^.]+$/, "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 15); $("title").placeholder = t || "VIDEOBOY"; }
   $("file-meta").innerHTML = "";
   const b = document.createElement("b"); b.textContent = file.name;
-  const s = document.createElement("span"); s.textContent = `${fmtT(v.duration)} min, ${w} × ${h} Pixel, ${fmtMB(file.size)}`;
+  const s = document.createElement("span"); s.textContent = `${fmtT(v.duration)} min, ${w} × ${h} pixels, ${fmtMB(file.size)}`;
   $("file-meta").append(b, s);
-  setStatus("Video geladen. Einstellungen prüfen, dann ROM erstellen.");
-  setNote(S.meta.hasVideo ? "Das ROM spielt hier im Browser genau so ab, wie es der Game Boy zeigen wird." : "In dieser Datei ist kein Bild, nur Ton.", !S.meta.hasVideo);
+  setStatus("Video loaded. Check the settings, then create the ROM.");
+  setNote(S.meta.hasVideo ? "The ROM plays here exactly as the Game Boy will show it." : "This file has no picture, only sound.", !S.meta.hasVideo);
   update();
 }
 
@@ -687,8 +687,8 @@ async function convert() {
   try {
     // audio first
     let audio = null;
-    if (S.sound) { setStatus("Bereite den Ton auf …"); audio = await prepareAudio(rate, S.start, len, S.mono); if (!audio) setNote("In diesem Video ist kein Ton, den der Browser lesen kann. Das ROM wird stumm.", false); }
-    const surroundNote = audio && audio[2] ? " Der Surround-Ton des Videos wurde zu Mono gemischt." : "";
+    if (S.sound) { setStatus("Preparing the sound …"); audio = await prepareAudio(rate, S.start, len, S.mono); if (!audio) setNote("This video has no sound the browser can read. The ROM will be silent.", false); }
+    const surroundNote = audio && audio[2] ? " The surround sound was mixed down to mono." : "";
     if (cancelFlag) throw new Error("cancel");
     // video element
     const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = S.meta.url;
@@ -697,7 +697,7 @@ async function convert() {
     if (v.readyState < 1) await once(v, "loadedmetadata");
     const grab = makeGrabber(v, W, H, S.fit);
     let lo = 0, hi = 1;
-    if (S.mode === "dmg" && S.contrast && S.meta.hasVideo) { setStatus("Messe Helligkeit …"); [lo, hi] = await measureContrast(v, grab, S.start, len, W, H); }
+    if (S.mode === "dmg" && S.contrast && S.meta.hasVideo) { setStatus("Measuring brightness …"); [lo, hi] = await measureContrast(v, grab, S.start, len, W, H); }
     // worker
     const wsrc = $("engine-src").textContent + "\n" + $("worker-src").textContent;
     worker = new Worker(URL.createObjectURL(new Blob([wsrc], { type: "text/javascript" })));
@@ -712,8 +712,8 @@ async function convert() {
         if (m.type === "ack") { acked = m.k; romBytes = m.bytes;
           if (m.idx) drawIdx(m.idx, p.tw, p.th); if (m.rgb) drawRGB(m.rgb, p.tw, p.th);
           $("mem-bar").firstElementChild.style.width = Math.min(100, acked / total * 100) + "%";
-          $("mem-value").textContent = `Bild ${acked} von ${total}`;
-          setStatus(`Wandle um ${Math.round(acked / total * 100)} %, ${fmtMB(romBytes)} im ROM`);
+          $("mem-value").textContent = `Frame ${acked} of ${total}`;
+          setStatus(`Converting ${Math.round(acked / total * 100)} %, ${fmtMB(romBytes)} in the ROM`);
         } else if (m.type === "full") { full = true; acked = m.k; }
         else if (m.type === "rom") res(m);
         else if (m.type === "error") rej(new Error(m.message));
@@ -721,7 +721,7 @@ async function convert() {
     });
     worker.postMessage({ type: "start", opts, players: PLAYERS }, audio ? [audio[0].buffer, audio[1].buffer] : []);
     const send = (px) => { if (full) return; worker.postMessage({ type: "frame", data: px.buffer }, [px.buffer]); sent++; };
-    setStatus("Wandle um …");
+    setStatus("Converting …");
     await captureFrames(v, grab, S.start, fps, total, send, () => sent - acked, () => cancelFlag || full);
     if (cancelFlag) throw new Error("cancel");
     worker.postMessage({ type: "finish" });
@@ -732,20 +732,20 @@ async function convert() {
     window.__vb = { rom, frames: finished.frames, mode: S.mode };
     const secs = finished.frames * p.n / VB.LCD_FPS;
     $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM";
-    $("mem-value").textContent = `${fmtMB(rom.length)} von 8 MB`; $("mem-bar").firstElementChild.style.width = (rom.length / ROM_MAX * 100) + "%";
-    let msg = `Fertig: ${fmtT(Math.round(secs))} min, ${finished.frames} Bilder` + (S.compress ? `, ${Math.round(finished.ratio * 100)} % der Kacheln übertragen` : "");
-    if (full || finished.frames < Math.floor(p.len * fps) - 1) msg += `. Das Video war zu lang und wurde auf ${fmtT(secs)} gekürzt.`;
+    $("mem-value").textContent = `${fmtMB(rom.length)} of 8 MB`; $("mem-bar").firstElementChild.style.width = (rom.length / ROM_MAX * 100) + "%";
+    let msg = `Done: ${fmtT(Math.round(secs))} min, ${finished.frames} frames` + (S.compress ? `, ${Math.round(finished.ratio * 100)} % of tiles stored` : "");
+    if (full || finished.frames < Math.floor(p.len * fps) - 1) msg += `. The video was too long and was cut to ${fmtT(secs)}.`;
     else msg += ".";
     msg += surroundNote;
-    setStatus(`Fertig. ${fmtMB(rom.length)} ${S.mode === "gbc" ? ".gbc" : ".gb"}-ROM`);
+    setStatus(`Done. ${fmtMB(rom.length)} ${S.mode === "gbc" ? ".gbc" : ".gb"} ROM`);
     setNote(msg, false);
     $("download").disabled = false; $("play").disabled = false; $("scrub").disabled = false;
-    $("download").textContent = downloads ? "ROM herunterladen (.zip)" : "ROM herunterladen";
+    $("download").textContent = downloads ? "Download ROM (.zip)" : "Download ROM";
     playOffset = 0; showFrame(-1);
     $("scrub").value = 0; $("time").textContent = `0:00 / ${fmtT(totalSecs())}`;
   } catch (e) {
-    if (String(e.message) === "cancel") { setStatus("Abgebrochen."); setNote("Die Umwandlung wurde abgebrochen.", false); }
-    else { setStatus("Fehler."); setNote("Das hat nicht geklappt: " + String(e.message).split("\n")[0], true); }
+    if (String(e.message) === "cancel") { setStatus("Cancelled."); setNote("The conversion was cancelled.", false); }
+    else { setStatus("Error."); setNote("That did not work: " + String(e.message).split("\n")[0], true); }
     idleOn = true; idle();
   } finally {
     if (worker) worker.terminate();
@@ -754,7 +754,7 @@ async function convert() {
     $("convert").classList.remove("hidden"); $("cancel").classList.add("hidden");
     for (const el of document.querySelectorAll(".panel input, .panel select, .panel button, .modes button")) el.disabled = false;
     update();
-    if (S.rom) { $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM"; $("mem-value").textContent = `${fmtMB(S.rom.length)} von 8 MB`; $("mem-bar").firstElementChild.style.width = (S.rom.length / ROM_MAX * 100) + "%"; }
+    if (S.rom) { $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM"; $("mem-value").textContent = `${fmtMB(S.rom.length)} of 8 MB`; $("mem-bar").firstElementChild.style.width = (S.rom.length / ROM_MAX * 100) + "%"; }
   }
 }
 
@@ -822,7 +822,7 @@ function buildAudio() {
 }
 async function startPlayback() {
   if (!S.reader) return;
-  try { actx = actx || new AudioContext(); await actx.resume(); } catch { setNote("Der Browser lässt hier keine Tonwiedergabe zu.", true); return; }
+  try { actx = actx || new AudioContext(); await actx.resume(); } catch { setNote("The browser does not allow sound playback here.", true); return; }
   if (!audioBuf || audioBuf.__rom !== S.rom) { audioBuf = buildAudio(); audioBuf.__rom = S.rom; }
   asrc = actx.createBufferSource(); asrc.buffer = audioBuf;
   const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 20;
@@ -831,14 +831,14 @@ async function startPlayback() {
   if (playOffset >= totalSecs()) playOffset = 0;
   asrc.start(0, playOffset); playStart = actx.currentTime; playing = true; idleOn = false;
   $("play-icon").innerHTML = '<path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/>'; $("play").setAttribute("aria-label", "Pause");
-  setStatus("Wiedergabe aus dem fertigen ROM"); $("led").classList.add("on");
+  setStatus("Playing the finished ROM"); $("led").classList.add("on");
   tick();
 }
 function stopPlayback() {
   if (asrc) { try { asrc.stop(); } catch {} asrc = null; }
   if (playing && actx) playOffset += actx.currentTime - playStart;
   playing = false; cancelAnimationFrame(raf);
-  $("play-icon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>'; $("play").setAttribute("aria-label", "Abspielen");
+  $("play-icon").innerHTML = '<path d="M7 4.5v15l13-7.5z"/>'; $("play").setAttribute("aria-label", "Play");
 }
 $("play").onclick = () => playing ? stopPlayback() : startPlayback();
 $("scrub").oninput = (e) => {
@@ -852,7 +852,7 @@ $("scrub").oninput = (e) => {
 
 // ------------------------------------------------------------- download
 let downloads = null;
-try { if (window.claude && window.claude.use) window.claude.use("downloads").then((d) => { downloads = d; if (S.rom) $("download").textContent = d ? "ROM herunterladen (.zip)" : "ROM herunterladen"; }).catch(() => {}); } catch {}
+try { if (window.claude && window.claude.use) window.claude.use("downloads").then((d) => { downloads = d; if (S.rom) $("download").textContent = d ? "Download ROM (.zip)" : "Download ROM"; }).catch(() => {}); } catch {}
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
 function zip(name, data) { // single file, stored
@@ -866,12 +866,12 @@ $("download").onclick = async () => {
   if (!S.rom) return;
   const ext = S.reader.gbc ? ".gbc" : ".gb", name = S.romName + ext;
   if (downloads) {
-    try { await downloads.save({ filename: S.romName + ".zip", data: zip(name, S.rom) }); setNote(`Gespeichert: ${S.romName}.zip mit ${name}. Entpacken und aufs Flashcart kopieren.`); }
-    catch (e) { if (e && e.code === "declined") setNote("Download abgebrochen."); else setNote("Download hier nicht möglich (" + (e && e.code || "Fehler") + ").", true); }
+    try { await downloads.save({ filename: S.romName + ".zip", data: zip(name, S.rom) }); setNote(`Saved: ${S.romName}.zip with ${name}. Unzip it and copy the ROM to your flash cart.`); }
+    catch (e) { if (e && e.code === "declined") setNote("Download cancelled."); else setNote("Downloading is not possible here (" + (e && e.code || "error") + ").", true); }
     return;
   }
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([S.rom])); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  setNote(`Heruntergeladen: ${name}`);
+  setNote(`Downloaded: ${name}`);
 };
 
 renderFps(); update(); idle();

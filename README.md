@@ -72,7 +72,7 @@ python3 videoboy.py movie.mp4 --preview preview.mp4   # see and hear the result 
 | `--compress` | **Compression mode**: much longer videos per ROM (see below) |
 | `--tolerance 2` | Only with `--compress`: how many pixels per 8×8 tile may differ before the tile is resent (0 = lossless) |
 
-The command line messages of the tool are in German.
+The messages of the command-line tool are in German; the browser app is in English.
 
 **On the Game Boy:** START = pause, SELECT = restart. At the end, the video loops.
 
