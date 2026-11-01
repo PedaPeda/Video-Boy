@@ -1,0 +1,4 @@
+*.o
+src/player.gb
+__pycache__/
+*.raw
