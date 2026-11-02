@@ -1,17 +1,23 @@
-# VIDEO BOY: Video Player for the Original Game Boy (DMG)
+# VIDEO BOY: Video Player for Game Boy, Game Boy Color, Game Boy Advance and Nintendo DS
 
-`videoboy.py` turns any video file (mp4, mkv, mov, webm …) into a Game Boy ROM with
-**picture and stereo sound**. The ROM runs on the original **DMG-01** as well as on the
-Game Boy Pocket, Color and Advance.
+VIDEO BOY turns any video file (mp4, mkv, mov, webm …) into a ROM with **picture and stereo sound**
+for Nintendo handhelds:
 
-With `--gbc` it builds a **Game Boy Color** ROM instead: full colour, up to full screen, and
-twice the audio sample rate (see [Game Boy Color mode](#game-boy-color-mode---gbc)).
+| Target | File | Picture | Sound | Runs on |
+|---|---|---|---|---|
+| Game Boy | `.gb` | up to 152×80, 4 shades | 9.2 kHz, 3-bit | Game Boy, Pocket, Color, Advance, GBA SP |
+| Game Boy Color | `.gbc` | up to 160×144, 32 colours | 18.4 kHz, 3-bit | Game Boy Color, Advance, GBA SP |
+| Game Boy Advance | `.gba` | up to 240×160, 256 colours | 18.2 kHz, 8-bit | GBA, GBA SP, **Game Boy Micro**, **DS / DS Lite** (GBA slot), **3DS** (open_agb_firm) |
+| Nintendo DS | `.nds` | up to 256×192, 256 colours | 21.2 kHz, 8-bit | **DS, DS Lite, DSi, 3DS / 2DS** (flash cart or TWiLight Menu++) |
 
-| Game Boy (DMG) | Game Boy Color (`--gbc`) |
-|---|---|
-| ![VIDEO BOY](preview.gif) | ![VIDEO BOY COLOR](preview_color.gif) |
+The [browser app](#browser-app-no-installation) builds all four. The command-line tool `videoboy.py`
+builds Game Boy and Game Boy Color ROMs (see [Game Boy Color mode](#game-boy-color-mode---gbc)).
 
-*Captured from the cycle-accurate emulator SameBoy (DMG and CGB model, colour correction off).
+| Game Boy | Game Boy Color | Game Boy Advance | Nintendo DS (top screen) |
+|---|---|---|---|
+| ![VIDEO BOY](preview.gif) | ![VIDEO BOY COLOR](preview_color.gif) | ![VIDEO BOY ADVANCE](preview_gba.gif) | ![VIDEO BOY DS](preview_ds.gif) |
+
+*Captured from the emulators SameBoy (Game Boy, Game Boy Color, colour correction off), mGBA and melonDS.
 Footage: "Big Buck Bunny", see credits below.*
 
 ## Requirements
@@ -33,8 +39,8 @@ the browser; the video is not uploaded anywhere, and Python or ffmpeg are not ne
 ![VIDEO BOY browser app](web/screenshot.png)
 
 * Open `web/index.html` in Chrome, Edge or Firefox (double-click is enough), or host it with GitHub Pages.
-* Both targets (Game Boy and Game Boy Color) and all options of the command-line tool, plus a live estimate of
-  how much fits into 8 MB and the matching `videoboy.py` command.
+* All four targets (Game Boy, Game Boy Color, Game Boy Advance / Micro, Nintendo DS / 3DS), a live estimate of
+  how much fits, and for Game Boy and Game Boy Color the matching `videoboy.py` command.
 * The preview decodes the finished ROM itself, so what you see and hear is exactly what the Game Boy will show.
 * Game Boy ROMs are byte-identical to the ones `videoboy.py` builds from the same frames. The audio filters are
   re-created with the Web Audio API, so the sound differs slightly from the command-line tool.
@@ -157,6 +163,39 @@ Colour video needs a lot more data than grey video, so `--compress` is recommend
 (`--tolerance 2`) or 2:54 min (`--tolerance 4`), i.e. at 160×96 in colour. The sound takes up a noticeable part
 (18 KB per second). Without `--compress`, `--fps auto` picks the frame rate that gives the most length.
 
+## Game Boy Advance and Game Boy Micro (`.gba`)
+
+Made with the browser app (target "GBA / Micro").
+
+* **Picture:** up to 240×160 (16:9 video: 240×136) with **256 colours per scene** out of 32,768, ordered dithering.
+  The GBA's affine hardware scales smaller pictures up to the full screen. Two picture pages are switched in
+  VBlank, so there is no tearing.
+* **Sound:** 8-bit stereo at 18,157 Hz through Direct Sound. DMA reads the samples straight from the cartridge,
+  locked to the picture (304 samples per frame).
+* **Compression** is always on: every frame only stores the 8×8 blocks that changed.
+* **Length:** GBA cartridges hold up to 32 MB, which is about 1½ minutes at 240×136 and 20 fps. The app
+  automatically lowers the frame rate or the picture size for longer clips.
+* **Where it runs:** Game Boy Advance, GBA SP and **Game Boy Micro** with a GBA flash cart (EverDrive GBA,
+  EZ-Flash Omega …); **Nintendo DS and DS Lite** with the flash cart in the GBA slot; **3DS / 2DS** with custom
+  firmware through open_agb_firm. Not on the DSi (no GBA slot); use the DS file there.
+* Player source: `src/gba/` (C and ARM assembly, built with clang/lld; the cartridge header is completed with
+  `gbafix` from devkitPro's gba-tools).
+
+## Nintendo DS, DSi and 3DS (`.nds`)
+
+Made with the browser app (target "DS / 3DS").
+
+* **Picture:** up to 256×192 on the top screen (16:9 video: 256×144), 256 colours per scene, page flipping,
+  hardware scaling. The bottom screen shows the controls.
+* **Sound:** 8-bit stereo at 21,238 Hz (355 samples per frame) on two looping sound channels, refilled ahead
+  of playback.
+* **Long videos:** the DS reads the video from the memory card while it plays (the data is a file inside the
+  ROM's NitroFS), so the length is only limited by the file size. The browser app makes files up to 1 GB
+  (about 45 minutes at 256×144 and 20 fps) and converts up to 45 minutes per file.
+* **Where it runs:** DS and DS Lite with a slot-1 flash cart (R4, Acekard, DSTWO …), DSi and 3DS / 2DS with
+  TWiLight Menu++ (or nds-bootstrap). Copy the `.nds` file to the SD card and start it from the menu.
+* Player source: `src/nds/` (C, built with [BlocksDS](https://blocksds.skylyrac.net)).
+
 ## How it works
 
 * **Picture:** 4 shades of grey with ordered dithering (Bayer 4×4). The steady pattern does not flicker in moving
@@ -186,15 +225,26 @@ Colour video needs a lot more data than grey video, so `--compress` is recommend
   buffer B uses `$8980–$97FF` in bank 1 and `$9000–$97FF` in bank 0; each has its own tile map and attribute map.
   The 64 palette bytes of a frame are written in four parts during VBlank when the buffers are switched.
 
-Tested in the cycle-accurate emulator SameBoy (DMG model; CGB model for `--gbc`), in all modes: every frame arrives pixel-perfect at an
+The GBA and DS players were tested in **mGBA** and **melonDS** (DS mode, reading the video from the ROM
+like a flash cart): every frame arrives pixel-perfect at an even frame rate, picture and sound stay in sync,
+stereo works, pause and restart work. The DSi / 3DS path through TWiLight Menu++ and real hardware have not
+been tested yet.
+
+The Game Boy players were tested in the cycle-accurate emulator SameBoy (DMG model; CGB model for `--gbc`), in all modes: every frame arrives pixel-perfect at an
 exactly even frame rate, picture and sound stay in sync, including 8 MB ROMs across all 511 banks and stress
 videos that use almost the full per-frame capacity. Pause and restart work. Not yet tested on real hardware.
 
 Simple emulators that don't emulate the NR50 master volume register (e.g. PyBoy) play no sound.
 
-## Building the player yourself (optional)
+## Building the players yourself (optional)
 
-`videoboy.py` already contains both finished players. If you want to change `src/player.asm` (DMG) or
+`videoboy.py` and the browser app already contain the finished players.
+
+* GBA: `sh src/gba/build.sh` (clang, lld, `gbafix`), then copy `player_gba.gba` to `web/players/`.
+* DS: `make` in `src/nds/` with BlocksDS, then copy `videoboy.nds` to `web/players/`.
+* `python3 web/build.py` rebuilds `web/index.html`.
+
+For the Game Boy players: If you want to change `src/player.asm` (DMG) or
 `src/player_gbc.asm` (Game Boy Color), you need [RGBDS](https://rgbds.gbdev.io):
 
 ```sh

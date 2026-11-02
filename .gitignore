@@ -2,3 +2,7 @@
 src/player.gb
 __pycache__/
 *.raw
+src/gba/player.elf
+src/gba/*.o
+src/nds/build/
+src/nds/*.nds

@@ -12,5 +12,7 @@ t = open(os.path.join(src, "template.html")).read()
 eng = open(os.path.join(src, "engine.js")).read()
 t = t.replace("/*@@ENGINE@@*/", eng).replace("/*@@ENGINE_MAIN@@*/", eng)
 t = t.replace("@@PLAYER_DMG@@", player("PLAYER_B64")).replace("@@PLAYER_GBC@@", player("PLAYER_GBC_B64"))
+for name, f in (("@@PLAYER_GBA@@", "player_gba.gba"), ("@@PLAYER_NDS@@", "videoboy.nds")):
+    t = t.replace(name, base64.b64encode(open(os.path.join(here, "players", f), "rb").read()).decode())
 open(os.path.join(here, "index.html"), "w").write(t)
 print("web/index.html built,", len(t), "bytes")

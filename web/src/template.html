@@ -48,7 +48,9 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
   font-variation-settings: "wdth" 122; letter-spacing: -0.01em; color: var(--ink);
 }
 .mark p { margin: 0; color: var(--mute); max-width: 60ch; text-wrap: balance; }
-.modes { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--shell); box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+.target { display: grid; gap: 8px; justify-items: start; }
+.runs { margin: 0 0 0 6px; font-size: 13px; color: var(--mute); max-width: 70ch; text-wrap: balance; }
+.modes { display: inline-flex; flex-wrap: wrap; padding: 4px; border-radius: 999px; background: var(--shell); box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
 .modes button {
   border: 0; background: transparent; padding: 9px 18px; border-radius: 999px; cursor: pointer;
   font-weight: 600; display: inline-flex; align-items: center; gap: 8px; color: var(--ink);
@@ -57,6 +59,8 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 .swatch { width: 18px; height: 10px; border-radius: 3px; display: inline-block; }
 .swatch.dmg { background: linear-gradient(90deg, #0F380F 0 25%, #306230 0 50%, #8BAC0F 0 75%, #9BBC0F 0); }
 .swatch.gbc { background: linear-gradient(90deg, #D8344C 0 25%, #F2B231 0 50%, #2FA36B 0 75%, #3A6BD6 0); }
+.swatch.gba { background: linear-gradient(90deg, #5B4BB7, #C04E9A 50%, #F0A23B); }
+.swatch.nds { width: 12px; height: 14px; background: linear-gradient(180deg, #3A6BD6 0 45%, transparent 45% 55%, #2FA36B 55%); border-radius: 2px; }
 
 /* ---------- main grid ---------- */
 .main { display: grid; grid-template-columns: minmax(340px, 470px) 1fr; gap: 28px; align-items: start; }
@@ -84,14 +88,15 @@ header { display: flex; flex-wrap: wrap; align-items: end; justify-content: spac
 @media (prefers-reduced-motion: reduce) { .led.busy { animation: none; } }
 .status { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .screen {
-  position: relative; aspect-ratio: 10 / 9; width: 100%; border-radius: 4px; overflow: hidden;
+  --sw: 160; --sh: 144;
+  position: relative; aspect-ratio: var(--sw) / var(--sh); width: 100%; border-radius: 4px; overflow: hidden;
   background: #0F380F; box-shadow: inset 0 0 0 2px rgba(0,0,0,.35);
 }
 .screen canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 .screen::after { /* LCD pixel grid */
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background-image: linear-gradient(rgba(0,0,0,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.10) 1px, transparent 1px);
-  background-size: calc(100% / 160) calc(100% / 144);
+  background-size: calc(100% / var(--sw)) calc(100% / var(--sh));
 }
 .screen.drag { outline: 3px dashed #F2E6A0; outline-offset: -8px; }
 
@@ -168,7 +173,9 @@ pre { margin: 10px 0 0; padding: 12px 14px; background: var(--ink); color: #E8E9
 .help p { margin: 0; }
 kbd { font: 600 12px var(--f-body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: #fff; color: var(--ink); }
 .only-dmg, .only-gbc { display: contents; }
-body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
+body.gbc .only-dmg, body.gba .only-dmg, body.nds .only-dmg, body.dmg .only-gbc { display: none; }
+#comp-always { display: block; margin-top: 4px; }
+#comp-always.hidden { display: none !important; }
 .hidden { display: none !important; }
 </style>
 </head>
@@ -177,11 +184,16 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
   <header>
     <div class="mark">
       <h1>Video Boy</h1>
-      <p>Turns your video into a Game Boy ROM with picture and sound. Everything runs here in your browser; your video is not uploaded anywhere.</p>
+      <p>Turns your video into a ROM for the Game Boy, Game Boy Color, Game Boy Advance and Nintendo DS, with picture and sound. Everything runs here in your browser; your video is not uploaded anywhere.</p>
     </div>
-    <div class="modes" role="group" aria-label="Target console">
-      <button type="button" id="mode-dmg" aria-pressed="true"><span class="swatch dmg"></span>Game Boy</button>
-      <button type="button" id="mode-gbc" aria-pressed="false"><span class="swatch gbc"></span>Game Boy Color</button>
+    <div class="target">
+      <div class="modes" role="group" aria-label="Target console">
+        <button type="button" id="mode-dmg" data-mode="dmg" aria-pressed="true"><span class="swatch dmg"></span>Game Boy</button>
+        <button type="button" id="mode-gbc" data-mode="gbc" aria-pressed="false"><span class="swatch gbc"></span>Game Boy Color</button>
+        <button type="button" id="mode-gba" data-mode="gba" aria-pressed="false"><span class="swatch gba"></span>GBA / Micro</button>
+        <button type="button" id="mode-nds" data-mode="nds" aria-pressed="false"><span class="swatch nds"></span>DS / 3DS</button>
+      </div>
+      <p class="runs" id="runs"></p>
     </div>
   </header>
 
@@ -190,7 +202,7 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
     <section class="console" aria-label="Preview">
       <div class="bezel">
         <div class="bezel-top"><span class="led on" id="led"></span><span class="status" id="status">Ready. Drop a video onto the screen.</span></div>
-        <div class="screen" id="screen"><canvas id="lcd" width="160" height="144" aria-label="Game Boy screen"></canvas></div>
+        <div class="screen" id="screen"><canvas id="lcd" width="160" height="144" aria-label="Console screen"></canvas></div>
       </div>
       <div class="transport">
         <button class="round" id="play" type="button" aria-label="Play" disabled>
@@ -264,7 +276,10 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
         <h2 id="h-comp">Compression</h2>
         <div class="row">
           <span class="lbl">More video per ROM</span>
-          <label class="switch"><input type="checkbox" id="compress"> Store only the parts that change</label>
+          <div>
+            <label class="switch"><input type="checkbox" id="compress"> Store only the parts that change</label>
+            <span class="hint hidden" id="comp-always">Always on for the Game Boy Advance and the DS.</span>
+          </div>
         </div>
         <div class="row">
           <label for="tol">Tolerance</label>
@@ -304,13 +319,16 @@ body.gbc .only-dmg, body.dmg .only-gbc { display: none; }
           <summary>Command-line equivalent</summary>
           <pre id="cli"></pre>
           <button class="btn second" type="button" id="copy-cli" style="margin-top:10px">Copy command</button>
+          <p class="hint hidden" id="cli-none" style="margin:10px 0 0">The command-line tool builds Game Boy and Game Boy Color ROMs. GBA and DS ROMs are made here in the browser app.</p>
         </details>
       </section>
 
       <section class="help" aria-labelledby="h-help">
         <h2 id="h-help" style="margin:0;font:italic 800 19px/1.2 var(--f-display);font-variation-settings:'wdth' 112">Getting it onto a Game Boy</h2>
-        <p>Copy the ROM onto a flash cart with MBC5 support, for example an EverDrive GB, EZ-Flash Junior or an 8 MB repro flash cart. Game Boy ROMs run on the Game Boy, Pocket, Color and Advance; Game Boy Color ROMs run on the Color and Advance.</p>
-        <p>On the console: <kbd>START</kbd> pauses, <kbd>SELECT</kbd> restarts. Keep this tab in the foreground while converting; in the background the browser slows down playback.</p>
+        <p><b>Game Boy and Game Boy Color:</b> copy the <code>.gb</code> or <code>.gbc</code> file onto a flash cart with MBC5 support, for example an EverDrive GB, EZ-Flash Junior or an 8 MB repro flash cart.</p>
+        <p><b>Game Boy Advance:</b> copy the <code>.gba</code> file onto a GBA flash cart (EverDrive GBA, EZ-Flash Omega …). It plays on the GBA, GBA SP and Game Boy Micro, on the DS and DS Lite with the flash cart in the GBA slot, and on a 3DS with custom firmware through open_agb_firm.</p>
+        <p><b>Nintendo DS:</b> copy the <code>.nds</code> file to a DS flash cart's microSD card, or start it on a DSi or 3DS with TWiLight Menu++. The video plays on the top screen.</p>
+        <p>On every console: <kbd>START</kbd> pauses, <kbd>SELECT</kbd> restarts. Keep this tab in the foreground while converting; in the background the browser slows down playback.</p>
       </section>
     </div>
   </div>
@@ -327,10 +345,14 @@ self.onmessage = (ev) => {
       const o = m.opts;
       const common = { n: o.n, tw: o.tw, th: o.th, audio: null, title: o.title, players: m.players };
       let audio = null;
-      if (o.audioL) audio = VB.quantizeAudio(o.audioL, o.audioR, o.volume, o.mode === "gbc" ? VB.GBC_RATE : VB.DMG_RATE, 0.3);
+      if (o.audioL && (o.mode === "dmg" || o.mode === "gbc")) audio = VB.quantizeAudio(o.audioL, o.audioR, o.volume, o.mode === "gbc" ? VB.GBC_RATE : VB.DMG_RATE, 0.3);
       common.audio = audio;
       let b;
-      if (o.mode === "gbc") b = new VB.Gbc(Object.assign(common, { compress: o.compress, tol: o.tol, dither: o.dither, gamma: o.gamma }));
+      if (o.mode === "gba" || o.mode === "nds") {
+        const pcm = o.audioL ? VB.pcm8(o.audioL, o.audioR, o.volume) : null;
+        const B = o.mode === "gba" ? VB.Gba : VB.Nds;
+        b = new B({ n: o.n, w: o.tw * 8, h: o.th * 8, audio: pcm, stereo: !o.mono, tol: o.tol, dither: o.dither, gamma: o.gamma, title: o.title, players: m.players });
+      } else if (o.mode === "gbc") b = new VB.Gbc(Object.assign(common, { compress: o.compress, tol: o.tol, dither: o.dither, gamma: o.gamma }));
       else if (o.compress) b = new VB.DmgZ(Object.assign(common, { tol: o.tol }));
       else b = new VB.DmgNormal(common);
       job = { b, o, k: 0, W: o.tw * 8, H: o.th * 8 };
@@ -338,7 +360,7 @@ self.onmessage = (ev) => {
     } else if (m.type === "frame") {
       const j = job, W = j.W, H = j.H, px = new Uint8Array(m.data);
       let r, view = null;
-      if (j.o.mode === "gbc") { r = j.b.add(px); }
+      if (j.o.mode === "gbc" || j.o.mode === "gba" || j.o.mode === "nds") { r = j.b.add(px); }
       else {
         const g = new Uint8Array(W * H);
         for (let i = 0; i < W * H; i++) g[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
@@ -348,13 +370,14 @@ self.onmessage = (ev) => {
       }
       if (r === null) { self.postMessage({ type: "full", k: j.k }); return; }
       j.k++;
-      const msg = { type: "ack", k: j.k, bytes: j.b.placer ? j.b.placer.buf.n : j.k * j.b.pkt };
+      const msg = { type: "ack", k: j.k, bytes: j.b.placer ? j.b.placer.buf.n : j.b.data ? j.b.data.n : j.b.bytes != null ? j.b.bytes : j.k * j.b.pkt };
+      if ((j.o.mode === "gba" || j.o.mode === "nds") && j.k % 2 === 1) { msg.pidx = j.b.enc.lastIdx; msg.pal = j.b.enc.q.pal; }
       if (view) msg.idx = view;
       if (j.o.mode === "gbc" && j.k % 2 === 1) msg.rgb = gbcView(j);
       self.postMessage(msg);
     } else if (m.type === "finish") {
       const rom = job.b.finish();
-      const T = job.o.tw * job.o.th;
+      const T = job.o.mode === "gba" || job.o.mode === "nds" ? job.o.tw * job.o.th : job.o.tw * job.o.th;
       const ratio = job.b.sent != null && job.k ? job.b.sent / (job.k * T) : 1;
       self.postMessage({ type: "rom", rom, frames: job.k, ratio }, [rom.buffer]);
       job = null;
@@ -372,7 +395,7 @@ function gbcView(j) { // what the Game Boy will show for the frame just encoded
 </script>
 <script>
 /*@@ENGINE_MAIN@@*/
-const PLAYERS = { dmg: "@@PLAYER_DMG@@", gbc: "@@PLAYER_GBC@@" };
+const PLAYERS = { dmg: "@@PLAYER_DMG@@", gbc: "@@PLAYER_GBC@@", gba: "@@PLAYER_GBA@@", nds: "@@PLAYER_NDS@@" };
 (() => {
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -380,7 +403,19 @@ const DMG_PAL = [[0x9B,0xBC,0x0F],[0x8B,0xAC,0x0F],[0x30,0x62,0x30],[0x0F,0x38,0
 const FPS_N = { "60": 1, "30": 2, "20": 3, "15": 4, "12": 5, "10": 6 };
 const SIZES = { dmg: ["160x72", "152x80", "144x80", "128x88", "120x96", "128x80", "96x48", "80x64"],
                 gbc: ["160x144", "160x128", "160x112", "160x96", "160x88", "144x80", "120x72", "96x64"] };
-const MB = 1024 * 1024, ROM_MAX = 8 * MB;
+const MB = 1024 * 1024;
+// per target: screen, memory, sound, devices
+const TGT = {
+  dmg: { W: 160, H: 144, max: 8 * MB, maxLabel: "8 MB", ext: ".gb", fps: VB.LCD_FPS, rate: VB.DMG_RATE, snd: "9198 Hz, 3-bit", sndShort: "9.2 kHz",
+         runs: "Runs on the Game Boy, Game Boy Pocket, Game Boy Color, Game Boy Advance and GBA SP." },
+  gbc: { W: 160, H: 144, max: 8 * MB, maxLabel: "8 MB", ext: ".gbc", fps: VB.LCD_FPS, rate: VB.GBC_RATE, snd: "18396 Hz, 3-bit", sndShort: "18.4 kHz",
+         runs: "Runs on the Game Boy Color, Game Boy Advance and GBA SP." },
+  gba: { W: 240, H: 160, max: 32 * MB, maxLabel: "32 MB", ext: ".gba", fps: VB.LCD_FPS, rate: Math.round(VB.GBA_RATE), snd: "18157 Hz, 8-bit", sndShort: "18.2 kHz 8-bit",
+         runs: "Runs on the Game Boy Advance, GBA SP and Game Boy Micro, the DS and DS Lite (GBA slot) and the 3DS with open_agb_firm." },
+  nds: { W: 256, H: 192, max: 1024 * MB, maxLabel: "1 GB", ext: ".nds", fps: VB.NDS_FPS, rate: Math.round(VB.NDS_RATE), snd: "21238 Hz, 8-bit", sndShort: "21.2 kHz 8-bit",
+         runs: "Runs on the DS and DS Lite (flash cart), the DSi and the 3DS / 2DS (TWiLight Menu++). Plays on the top screen." },
+};
+const bitmap = () => S.mode === "gba" || S.mode === "nds";
 
 const S = { mode: "dmg", fps: "auto", size: "auto", fit: "fill", gamma: 1, dither: true, contrast: true,
             compress: false, tol: 2, sound: true, mono: false, volume: 1, title: "", start: 0, dur: null,
@@ -395,8 +430,25 @@ function setStatus(t) { $("status").textContent = t; }
 function setNote(t, err) { const n = $("note"); n.textContent = t; n.classList.toggle("err", !!err); }
 
 // ------------------------------------------------------------- LCD
-const lcd = $("lcd"), ctx = lcd.getContext("2d"), img = ctx.createImageData(160, 144);
+const lcd = $("lcd"), ctx = lcd.getContext("2d");
+let img = ctx.createImageData(160, 144);
+function setScreen(W, H) {
+  if (lcd.width === W && lcd.height === H) return;
+  lcd.width = W; lcd.height = H; img = ctx.createImageData(W, H);
+  $("screen").style.setProperty("--sw", W); $("screen").style.setProperty("--sh", H);
+}
 function drawRGBA(px) { img.data.set(px); ctx.putImageData(img, 0, 0); }
+// GBA / DS preview while converting: palette image scaled like the console's affine hardware
+function drawPal(idx, pal, w, h) {
+  const W = lcd.width, H = lcd.height, af = VB.affine(w, h, W, H), d = img.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const tx = (x * af.pa + af.x) >> 8, ty = (y * af.pd + af.y) >> 8, o = (y * W + x) * 4;
+    let r = 0, g = 0, b = 0;
+    if (tx >= 0 && tx < w && ty >= 0 && ty < h) { const c = idx[ty * w + tx] * 3; r = pal[c] * 255 / 31; g = pal[c + 1] * 255 / 31; b = pal[c + 2] * 255 / 31; }
+    d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
 function drawIdx(idx, tw, th) { // DMG preview during conversion
   const d = img.data, W = tw * 8, H = th * 8, x0 = (160 - W) >> 1, y0 = (144 - H) >> 1;
   for (let i = 0; i < 160 * 144; i++) { const c = DMG_PAL[3]; d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 255; }
@@ -415,26 +467,40 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 function idle() {
   if (!idleOn) return;
-  const d = img.data, t = idleT;
-  for (let y = 0; y < 144; y++) for (let x = 0; x < 160; x++) {
+  const d = img.data, t = idleT, W = lcd.width, H = lcd.height;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const v = (Math.sin(x / 17 + t) + Math.sin(y / 13 - t * 0.7) + Math.sin((x + y) / 23 + t * 0.4) + 3) / 6;
-    const o = (y * 160 + x) * 4, th = (B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+    const o = (y * W + x) * 4, th = (B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
     if (S.mode === "dmg") { const l = Math.min(3, Math.floor(v * 3 + th)); const c = DMG_PAL[3 - l]; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; }
-    else { const h = (v * 0.9 + x / 400 + t * 0.03) % 1, q = Math.floor(v * 3 + th) / 3;
+    else { const lv = S.mode === "gbc" ? 3 : 7, h = (v * 0.9 + x / 400 + t * 0.03) % 1, q = Math.floor(v * lv + th) / lv;
       d[o] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * h)); d[o + 1] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * (h - 0.33))); d[o + 2] = 255 * q * (0.5 + 0.5 * Math.cos(6.283 * (h - 0.66))); }
     d[o + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  ctx.fillStyle = S.mode === "dmg" ? "#0F380F" : "#10142E"; ctx.fillRect(14, 58, 132, 28);
+  const cx = W / 2, cy = H / 2;
+  ctx.fillStyle = S.mode === "dmg" ? "#0F380F" : "#10142E"; ctx.fillRect(cx - 78, cy - 14, 156, 28);
   ctx.fillStyle = S.mode === "dmg" ? "#9BBC0F" : "#F4F1FF"; ctx.font = "bold 10px Archivo, sans-serif"; ctx.textAlign = "center";
-  ctx.fillText(S.file ? "Ready to convert" : "Drop a video here", 80, 70); ctx.font = "9px 'Instrument Sans', sans-serif";
-  ctx.fillText(S.mode === "dmg" ? "Game Boy, 4 shades" : "Game Boy Color, 32 colours", 80, 81);
+  ctx.fillText(S.file ? "Ready to convert" : "Drop a video here", cx, cy - 2); ctx.font = "9px 'Instrument Sans', sans-serif";
+  ctx.fillText({ dmg: "Game Boy, 4 shades", gbc: "Game Boy Color, 32 colours", gba: "Game Boy Advance, 256 colours", nds: "Nintendo DS, 256 colours" }[S.mode], cx, cy + 9);
   if (!reduce) { idleT += 0.03; requestAnimationFrame(idle); }
 }
 
 // ------------------------------------------------------------- planning
 function aspect() { return S.meta ? S.meta.aspect : 16 / 9; }
 function clipLen() { if (!S.meta) return null; const rest = Math.max(0, S.meta.duration - S.start); return S.dur ? Math.min(S.dur, rest) : rest; }
+function chanCount() { return S.sound ? (S.mono ? 1 : 2) : 0; }
+function bitmapPlan(len) {
+  const T = VB.BITMAP[S.mode], sizes = S.size !== "auto" ? [S.size.split("x").map(Number)] : VB.bitmapSizes(S.mode, aspect());
+  const fits = (w, h, n) => len == null || VB.bitmapMaxSeconds(S.mode, w, h, n, chanCount()) >= len;
+  let pick = null;
+  if (S.fps !== "auto") { const n = FPS_N[S.fps]; pick = sizes.find(([w, h]) => fits(w, h, n)) || sizes[sizes.length - 1]; pick = [pick[0], pick[1], n]; }
+  else {
+    outer: for (const ns of [[3, 4], [5, 6]]) for (const [w, h] of sizes) for (const n of ns) if (fits(w, h, n)) { pick = [w, h, n]; break outer; }
+    if (!pick) { const [w, h] = sizes[sizes.length - 1]; pick = [w, h, 6]; }
+  }
+  const [w, h, n] = pick;
+  return { n, tw: w / 8, th: h / 8, ok: w <= T.W && h <= T.H, maxS: VB.bitmapMaxSeconds(S.mode, w, h, n, chanCount()), len, fps: T.fps / n };
+}
 function layoutFor(n) {
   if (S.size !== "auto") { const [w, h] = S.size.split("x").map(Number); return [w / 8, h / 8]; }
   if (S.mode === "gbc") return VB.chooseLayoutGBC(aspect(), n);
@@ -442,6 +508,7 @@ function layoutFor(n) {
 }
 function plan() {
   const len = clipLen();
+  if (bitmap()) return bitmapPlan(len);
   let n;
   if (S.fps !== "auto") n = FPS_N[S.fps];
   else {
@@ -474,39 +541,48 @@ function renderSizes() {
   const sel = $("size"), keep = S.size; sel.innerHTML = "";
   const o = document.createElement("option"); o.value = "auto"; o.textContent = "Automatic"; sel.appendChild(o);
   const n = S.fps === "auto" ? 3 : FPS_N[S.fps];
-  for (const s of SIZES[S.mode]) { const [w, h] = s.split("x").map(Number); const op = document.createElement("option"); op.value = s;
-    const ok = VB.sizeOK(S.mode, S.compress, w / 8, h / 8, n);
+  const list = bitmap() ? [...new Set([`${TGT[S.mode].W}x${TGT[S.mode].H}`, ...[16 / 9, 4 / 3, 2.35].flatMap(a => VB.bitmapSizes(S.mode, a).map(([w, h]) => `${w}x${h}`))])] : SIZES[S.mode];
+  for (const s of list) { const [w, h] = s.split("x").map(Number); const op = document.createElement("option"); op.value = s;
+    const ok = bitmap() ? true : VB.sizeOK(S.mode, S.compress, w / 8, h / 8, n);
     op.textContent = `${w} × ${h}` + (ok ? "" : " (too big for this frame rate)"); op.disabled = !ok; sel.appendChild(op); }
   sel.value = [...sel.options].some(x => x.value === keep && !x.disabled) ? keep : "auto"; S.size = sel.value;
 }
 function update() {
   document.body.className = S.mode;
-  $("mode-dmg").setAttribute("aria-pressed", String(S.mode === "dmg"));
-  $("mode-gbc").setAttribute("aria-pressed", String(S.mode === "gbc"));
+  for (const b of document.querySelectorAll(".modes button")) b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode));
+  $("runs").textContent = TGT[S.mode].runs;
+  if (!S.rom && !S.busy) setScreen(TGT[S.mode].W, TGT[S.mode].H);
+  $("compress").checked = bitmap() || S.compress; $("compress").disabled = bitmap() || S.busy;
+  $("comp-always").classList.toggle("hidden", !bitmap());
+  $("cli").classList.toggle("hidden", bitmap()); $("copy-cli").classList.toggle("hidden", bitmap()); $("cli-none").classList.toggle("hidden", !bitmap());
   for (const b of $("fps").children) b.setAttribute("aria-pressed", String(b.dataset.v === S.fps));
   for (const b of $("fit").children) b.setAttribute("aria-pressed", String(b.dataset.v === S.fit));
   for (const b of $("chan").children) b.setAttribute("aria-pressed", String((b.dataset.v === "mono") === S.mono));
   renderSizes();
-  $("tol").disabled = !S.compress;
-  $("snd-desc").textContent = S.mode === "gbc" ? "18396 Hz, 3-bit" : "9198 Hz, 3-bit";
+  $("tol").disabled = !(S.compress || bitmap());
+  $("snd-desc").textContent = TGT[S.mode].snd;
   $("gamma-o").textContent = num2(S.gamma); $("vol-o").textContent = num2(S.volume); $("tol-o").textContent = S.tol;
   const p = plan();
   const facts = [];
   facts.push([`${p.tw * 8} × ${p.th * 8} pixels`]);
   facts.push([`${p.fps.toLocaleString("en-US", { maximumFractionDigits: 1 })} fps`]);
-  facts.push([S.sound ? (S.mode === "gbc" ? "Sound 18.4 kHz" : "Sound 9.2 kHz") + (S.mono ? " mono" : " stereo") : "no sound"]);
-  facts.push([(S.compress ? "approx. " : "") + `up to ${fmtT(p.maxS)} min in 8 MB`]);
+  facts.push([S.sound ? "Sound " + TGT[S.mode].sndShort + (S.mono ? " mono" : " stereo") : "no sound"]);
+  const approx = S.compress || bitmap();
+  facts.push([(approx ? "approx. " : "") + `up to ${fmtT(p.maxS)} min in ${TGT[S.mode].maxLabel}`]);
   if (p.len != null) {
     if (p.len > p.maxS) facts.push([`Your ${fmtT(p.len)} clip will be cut`, "warn"]);
     else facts.push([`Your ${fmtT(p.len)} clip fits`, "ok"]);
   }
   if (!p.ok) facts.push(["Picture size does not fit this frame rate", "warn"]);
+  if (p.len != null && S.mode === "nds" && p.len > 45 * 60) facts.push(["The browser app converts up to 45 min per file", "warn"]);
   const f = $("facts"); f.innerHTML = "";
   for (const [t, c] of facts) { const s = document.createElement("span"); s.className = "chip" + (c ? " " + c : ""); s.textContent = t; f.appendChild(s); }
   if (!S.rom && !S.busy) {
-    const est = p.len == null ? null : Math.min(ROM_MAX, Math.min(p.len, p.maxS) * p.fps * VB.frameBytes(S.mode, S.compress, p.tw, p.th, p.n) + 16384);
+    const ROM_MAX = TGT[S.mode].max;
+    const fb = bitmap() ? VB.bitmapFrameBytes(S.mode, p.tw * 8, p.th * 8, p.n, chanCount()) : VB.frameBytes(S.mode, S.compress, p.tw, p.th, p.n);
+    const est = p.len == null ? null : Math.min(ROM_MAX, Math.min(p.len, p.maxS) * p.fps * fb + 16384);
     $("mem-label").textContent = "Estimated ROM size";
-    $("mem-value").textContent = est == null ? "– of 8 MB" : `${S.compress ? "approx. " : ""}${fmtMB(est)} of 8 MB`;
+    $("mem-value").textContent = est == null ? `– of ${TGT[S.mode].maxLabel}` : `${approx ? "approx. " : ""}${fmtMB(est)} of ${TGT[S.mode].maxLabel}`;
     $("mem-bar").firstElementChild.style.width = est == null ? "0" : (est / ROM_MAX * 100) + "%";
     $("mem-bar").classList.remove("progress");
   }
@@ -537,8 +613,7 @@ function invalidateRom() {
 
 // ------------------------------------------------------------- inputs
 function bindSeg(id, fn) { $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b || b.disabled) return; fn(b.dataset.v); invalidateRom(); update(); }); }
-$("mode-dmg").onclick = () => { if (S.busy) return; S.mode = "dmg"; invalidateRom(); update(); };
-$("mode-gbc").onclick = () => { if (S.busy) return; S.mode = "gbc"; invalidateRom(); update(); };
+for (const b of document.querySelectorAll(".modes button")) b.onclick = () => { if (S.busy) return; S.mode = b.dataset.mode; S.size = "auto"; invalidateRom(); setScreen(TGT[S.mode].W, TGT[S.mode].H); update(); if (reduce) idle(); };
 bindSeg("fit", (v) => S.fit = v);
 bindSeg("chan", (v) => S.mono = v === "mono");
 $("fps").addEventListener("click", () => invalidateRom());
@@ -549,7 +624,7 @@ onInput("vol", (t) => S.volume = Number(t.value));
 onInput("tol", (t) => S.tol = Number(t.value));
 onInput("dither", (t) => S.dither = t.checked);
 onInput("contrast", (t) => S.contrast = t.checked);
-onInput("compress", (t) => S.compress = t.checked);
+onInput("compress", (t) => { if (!bitmap()) S.compress = t.checked; });
 onInput("sound", (t) => S.sound = t.checked);
 onInput("title", (t) => S.title = t.value.trim());
 onInput("start", (t) => { const v = parseTime(t.value); S.start = isNaN(v) ? 0 : v; t.setAttribute("aria-invalid", String(isNaN(v))); });
@@ -679,9 +754,12 @@ async function convert() {
   for (const el of document.querySelectorAll(".panel input, .panel select, .panel button, .modes button")) el.disabled = true;
   $("led").classList.add("busy"); idleOn = false;
   $("mem-bar").classList.add("progress"); $("mem-label").textContent = "Fortschritt";
-  const rate = S.mode === "gbc" ? VB.GBC_RATE : VB.DMG_RATE;
+  const rate = TGT[S.mode].rate;
   // without compression the length is exact; with compression the encoder stops when 8 MB are full
-  const W = p.tw * 8, H = p.th * 8, fps = p.fps, len = S.compress ? Math.min(p.len, 20 * 60) : Math.min(p.len, p.maxS + 1);
+  // GBA/DS and compressed ROMs stop by themselves when the memory is full; the browser keeps
+  // the decoded sound in memory, so very long clips are capped
+  const cap = S.mode === "nds" ? 45 * 60 : 20 * 60;
+  const W = p.tw * 8, H = p.th * 8, fps = p.fps, len = (S.compress || bitmap()) ? Math.min(p.len, cap) : Math.min(p.len, p.maxS + 1);
   const total = Math.max(1, Math.floor(len * fps));
   let worker = null; const cleanup = [];
   try {
@@ -701,7 +779,7 @@ async function convert() {
     // worker
     const wsrc = $("engine-src").textContent + "\n" + $("worker-src").textContent;
     worker = new Worker(URL.createObjectURL(new Blob([wsrc], { type: "text/javascript" })));
-    const opts = { mode: S.mode, n: p.n, tw: p.tw, th: p.th, compress: S.compress, tol: S.tol, dither: S.dither, gamma: S.gamma,
+    const opts = { mode: S.mode, n: p.n, tw: p.tw, th: p.th, mono: S.mono, compress: S.compress, tol: S.tol, dither: S.dither, gamma: S.gamma,
                    lo, hi: S.contrast ? hi : 1, volume: S.volume, title: S.title || $("title").placeholder || "VIDEOBOY" };
     if (S.mode === "dmg" && !S.contrast) { opts.lo = 0; opts.hi = 1; }
     if (audio) { opts.audioL = audio[0]; opts.audioR = audio[1]; }
@@ -710,7 +788,7 @@ async function convert() {
       worker.onmessage = (e) => {
         const m = e.data;
         if (m.type === "ack") { acked = m.k; romBytes = m.bytes;
-          if (m.idx) drawIdx(m.idx, p.tw, p.th); if (m.rgb) drawRGB(m.rgb, p.tw, p.th);
+          if (m.idx) drawIdx(m.idx, p.tw, p.th); if (m.rgb) drawRGB(m.rgb, p.tw, p.th); if (m.pidx) drawPal(m.pidx, m.pal, p.tw * 8, p.th * 8);
           $("mem-bar").firstElementChild.style.width = Math.min(100, acked / total * 100) + "%";
           $("mem-value").textContent = `Frame ${acked} of ${total}`;
           setStatus(`Converting ${Math.round(acked / total * 100)} %, ${fmtMB(romBytes)} in the ROM`);
@@ -728,21 +806,21 @@ async function convert() {
     finished = await result;
     const rom = new Uint8Array(finished.rom);
     S.rom = rom; S.romName = (S.title || $("title").placeholder || "videoboy").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "videoboy";
-    S.reader = new VB.RomReader(rom);
+    S.reader = S.mode === "gba" ? new VB.GbaReader(rom) : S.mode === "nds" ? new VB.NdsReader(rom) : new VB.RomReader(rom);
     window.__vb = { rom, frames: finished.frames, mode: S.mode };
     const secs = finished.frames * p.n / VB.LCD_FPS;
     $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM";
-    $("mem-value").textContent = `${fmtMB(rom.length)} of 8 MB`; $("mem-bar").firstElementChild.style.width = (rom.length / ROM_MAX * 100) + "%";
+    $("mem-value").textContent = `${fmtMB(rom.length)} of ${TGT[S.mode].maxLabel}`; $("mem-bar").firstElementChild.style.width = (rom.length / TGT[S.mode].max * 100) + "%";
     let msg = `Done: ${fmtT(Math.round(secs))} min, ${finished.frames} frames` + (S.compress ? `, ${Math.round(finished.ratio * 100)} % of tiles stored` : "");
     if (full || finished.frames < Math.floor(p.len * fps) - 1) msg += `. The video was too long and was cut to ${fmtT(secs)}.`;
     else msg += ".";
     msg += surroundNote;
-    setStatus(`Done. ${fmtMB(rom.length)} ${S.mode === "gbc" ? ".gbc" : ".gb"} ROM`);
+    setStatus(`Done. ${fmtMB(rom.length)} ${TGT[S.mode].ext} ${S.mode === "nds" ? "file" : "ROM"}`);
     setNote(msg, false);
     $("download").disabled = false; $("play").disabled = false; $("scrub").disabled = false;
     $("download").textContent = downloads ? "Download ROM (.zip)" : "Download ROM";
     playOffset = 0; showFrame(-1);
-    $("scrub").value = 0; $("time").textContent = `0:00 / ${fmtT(totalSecs())}`;
+    $("scrub").value = 0; $("time").textContent = `0:00 / ${fmtT(Math.round(totalSecs()))}`;
   } catch (e) {
     if (String(e.message) === "cancel") { setStatus("Cancelled."); setNote("The conversion was cancelled.", false); }
     else { setStatus("Error."); setNote("That did not work: " + String(e.message).split("\n")[0], true); }
@@ -754,7 +832,7 @@ async function convert() {
     $("convert").classList.remove("hidden"); $("cancel").classList.add("hidden");
     for (const el of document.querySelectorAll(".panel input, .panel select, .panel button, .modes button")) el.disabled = false;
     update();
-    if (S.rom) { $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM"; $("mem-value").textContent = `${fmtMB(S.rom.length)} of 8 MB`; $("mem-bar").firstElementChild.style.width = (S.rom.length / ROM_MAX * 100) + "%"; }
+    if (S.rom) { $("mem-bar").classList.remove("progress"); $("mem-label").textContent = "ROM"; $("mem-value").textContent = `${fmtMB(S.rom.length)} of ${TGT[S.mode].maxLabel}`; $("mem-bar").firstElementChild.style.width = (S.rom.length / TGT[S.mode].max * 100) + "%"; }
   }
 }
 
@@ -798,12 +876,17 @@ async function captureFrames(v, grab, start, fps, total, emit, pending, stop) {
 
 // ------------------------------------------------------------- playback (decodes the ROM itself)
 let actx = null, asrc = null, playing = false, playStart = 0, playOffset = 0, raf = 0, audioBuf = null;
-const frameBuf = new Uint8ClampedArray(160 * 144 * 4);
-function periodSecs() { return S.reader.n / VB.LCD_FPS; }
-function totalSecs() { return S.reader.npk * periodSecs(); }
+let frameBuf = new Uint8ClampedArray(160 * 144 * 4);
+const isBitmapReader = () => S.reader && (S.reader.gba || S.reader.nds);
+function periodSecs() { return S.reader.n / (S.reader.fps || VB.LCD_FPS); }
+function totalSecs() { return (isBitmapReader() ? S.reader.frames : S.reader.npk) * periodSecs(); }
+// which frame is on screen at time t (Game Boy players show frame k one period after its sound starts)
+function frameAt(t) { return Math.floor(t / periodSecs()) - (isBitmapReader() ? 0 : 1); }
 function showFrame(k) {
   const r = S.reader; if (!r) return;
-  if (k < 0) { frameBuf.fill(0); for (let i = 0; i < 160 * 144; i++) { const c = r.gbc ? [0, 0, 0] : DMG_PAL[3]; frameBuf[i * 4] = c[0]; frameBuf[i * 4 + 1] = c[1]; frameBuf[i * 4 + 2] = c[2]; frameBuf[i * 4 + 3] = 255; } }
+  const W = r.W || 160, H = r.H || 144;
+  setScreen(W, H); if (frameBuf.length !== W * H * 4) frameBuf = new Uint8ClampedArray(W * H * 4);
+  if (k < 0) { frameBuf.fill(0); for (let i = 0; i < W * H; i++) { const c = r.gbc || r.gba || r.nds ? [0, 0, 0] : DMG_PAL[3]; frameBuf[i * 4] = c[0]; frameBuf[i * 4 + 1] = c[1]; frameBuf[i * 4 + 2] = c[2]; frameBuf[i * 4 + 3] = 255; } }
   else { k = Math.min(k, r.frames - 1); r.seek(k); r.render(k, frameBuf, DMG_PAL); }
   drawRGBA(frameBuf);
 }
@@ -811,12 +894,18 @@ function tick() {
   const t = playOffset + (actx.currentTime - playStart);
   const T = totalSecs();
   if (t >= T) { stopPlayback(); playOffset = 0; showFrame(S.reader.frames - 1); return; }
-  showFrame(Math.floor(t / periodSecs()) - 1);
-  $("scrub").value = Math.round(t / T * 1000); $("time").textContent = `${fmtT(t)} / ${fmtT(T)}`;
+  showFrame(frameAt(t));
+  $("scrub").value = Math.round(t / T * 1000); $("time").textContent = `${fmtT(t)} / ${fmtT(Math.round(T))}`;
   raf = requestAnimationFrame(tick);
 }
 function buildAudio() {
-  const r = S.reader, a = r.audio(), buf = actx.createBuffer(2, a.length, r.rate), L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const r = S.reader;
+  if (isBitmapReader()) { // 8-bit signed PCM
+    const a = r.audio(), n = a.L.length, buf = actx.createBuffer(2, Math.max(1, n), r.rate), L = buf.getChannelData(0), R = buf.getChannelData(1);
+    for (let i = 0; i < n; i++) { L[i] = a.L[i] / 128; R[i] = a.R[i] / 128; }
+    return buf;
+  }
+  const a = r.audio(), buf = actx.createBuffer(2, a.length, r.rate), L = buf.getChannelData(0), R = buf.getChannelData(1);
   for (let i = 0; i < a.length; i++) { L[i] = ((a[i] >> 4) & 7) / 3.5 - 1; R[i] = (a[i] & 7) / 3.5 - 1; }
   return buf;
 }
@@ -845,8 +934,8 @@ $("scrub").oninput = (e) => {
   if (!S.reader) return;
   const was = playing; stopPlayback();
   playOffset = e.target.value / 1000 * totalSecs();
-  showFrame(Math.floor(playOffset / periodSecs()) - 1);
-  $("time").textContent = `${fmtT(playOffset)} / ${fmtT(totalSecs())}`;
+  showFrame(frameAt(playOffset));
+  $("time").textContent = `${fmtT(playOffset)} / ${fmtT(Math.round(totalSecs()))}`;
   if (was) startPlayback();
 };
 
@@ -864,7 +953,7 @@ function zip(name, data) { // single file, stored
 }
 $("download").onclick = async () => {
   if (!S.rom) return;
-  const ext = S.reader.gbc ? ".gbc" : ".gb", name = S.romName + ext;
+  const ext = S.reader.nds ? ".nds" : S.reader.gba ? ".gba" : S.reader.gbc ? ".gbc" : ".gb", name = S.romName + ext;
   if (downloads) {
     try { await downloads.save({ filename: S.romName + ".zip", data: zip(name, S.rom) }); setNote(`Saved: ${S.romName}.zip with ${name}. Unzip it and copy the ROM to your flash cart.`); }
     catch (e) { if (e && e.code === "declined") setNote("Download cancelled."); else setNote("Downloading is not possible here (" + (e && e.code || "error") + ").", true); }

@@ -578,6 +578,314 @@ const VB = (() => {
     }
   }
 
+  // ================================================================ 256-colour bitmap targets (GBA, DS)
+  // One palette of 255 colours (+ black at index 0) per scene, ordered dithering, and
+  // packets of changed 8x8 blocks against the page the frame will be written to.
+  class Pal256 {
+    constructor(dither, gamma) {
+      this.dither = dither; this.lut8 = new Float32Array(256);
+      for (let i = 0; i < 256; i++) this.lut8[i] = Math.pow(i / 255, gamma) * 31;
+      this.pal = null; this.inv = null; this.err0 = 0; this.spread = 1;
+    }
+    // median cut over a 15-bit histogram, then k-means refinement
+    build(hist) {
+      const cols = [];
+      for (let c = 0; c < 32768; c++) if (hist[c]) cols.push(c);
+      const R = (c) => c & 31, G = (c) => (c >> 5) & 31, B = (c) => c >> 10;
+      let boxes = [cols];
+      while (boxes.length < 255) {
+        let bi = -1, best = -1, ch = 0;
+        for (let i = 0; i < boxes.length; i++) {
+          const b = boxes[i]; if (b.length < 2) continue;
+          let mn = [31, 31, 31], mx = [0, 0, 0], w = 0;
+          for (const c of b) { const v = [R(c), G(c), B(c)]; for (let k = 0; k < 3; k++) { if (v[k] < mn[k]) mn[k] = v[k]; if (v[k] > mx[k]) mx[k] = v[k]; } w += hist[c]; }
+          const rg = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]], k = rg.indexOf(Math.max(...rg)), score = rg[k] * Math.sqrt(w);
+          if (score > best) { best = score; bi = i; ch = k; }
+        }
+        if (bi < 0 || best <= 0) break;
+        const b = boxes[bi], f = [R, G, B][ch];
+        b.sort((u, v) => f(u) - f(v));
+        let tot = 0; for (const c of b) tot += hist[c];
+        let acc = 0, cut = 1; for (let i = 0; i < b.length - 1; i++) { acc += hist[b[i]]; if (acc >= tot / 2) { cut = i + 1; break; } }
+        boxes.splice(bi, 1, b.slice(0, cut), b.slice(cut));
+      }
+      let P = boxes.filter(b => b.length).map(b => { let s = [0, 0, 0], w = 0; for (const c of b) { const h = hist[c]; s[0] += R(c) * h; s[1] += G(c) * h; s[2] += B(c) * h; w += h; } return [s[0] / w, s[1] / w, s[2] / w]; });
+      for (let it = 0; it < 2; it++) { // k-means on the histogram
+        const sum = P.map(() => [0, 0, 0, 0]);
+        for (const c of cols) { const r = R(c), g = G(c), bb = B(c); let bi = 0, bd = Infinity;
+          for (let i = 0; i < P.length; i++) { const d = (r - P[i][0]) ** 2 + (g - P[i][1]) ** 2 + (bb - P[i][2]) ** 2; if (d < bd) { bd = d; bi = i; } }
+          const h = hist[c], s = sum[bi]; s[0] += r * h; s[1] += g * h; s[2] += bb * h; s[3] += h; }
+        P = P.map((p, i) => sum[i][3] ? [sum[i][0] / sum[i][3], sum[i][1] / sum[i][3], sum[i][2] / sum[i][3]] : p);
+      }
+      const pal = new Uint8Array(256 * 3);
+      P.forEach((p, i) => { pal[(i + 1) * 3] = Math.round(p[0]); pal[(i + 1) * 3 + 1] = Math.round(p[1]); pal[(i + 1) * 3 + 2] = Math.round(p[2]); });
+      for (let i = P.length + 1; i < 256; i++) pal.copyWithin(i * 3, 3, 6);
+      this.pal = pal; this.inv = new Uint8Array(32768);
+      // inverse colour map, nearest palette entry for every 15-bit colour (index 0 is reserved black)
+      for (let c = 0; c < 32768; c++) { const r = c & 31, g = (c >> 5) & 31, b = c >> 10; let bi = 1, bd = Infinity;
+        for (let i = 1; i < 256; i++) { const d = (r - pal[i * 3]) ** 2 + (g - pal[i * 3 + 1]) ** 2 + (b - pal[i * 3 + 2]) ** 2; if (d < bd) { bd = d; bi = i; } }
+        this.inv[c] = bi; }
+      let sp = 0; // dither amplitude: mean distance to the nearest other colour
+      for (let i = 1; i <= P.length; i++) { let bd = Infinity; for (let j = 1; j <= P.length; j++) if (j !== i) { const d = (pal[i * 3] - pal[j * 3]) ** 2 + (pal[i * 3 + 1] - pal[j * 3 + 1]) ** 2 + (pal[i * 3 + 2] - pal[j * 3 + 2]) ** 2; if (d < bd) bd = d; } sp += Math.sqrt(bd); }
+      this.spread = Math.min(4, Math.max(0.8, sp / Math.max(1, P.length)));
+    }
+    // RGBA (w*h) -> palette indices; returns [idx, paletteChanged]
+    quantize(rgba, w, h) {
+      const N = w * h, f = this.lut8, q5 = new Uint16Array(N);
+      const hist = new Uint32Array(32768);
+      for (let i = 0; i < N; i++) { const c = Math.min(31, Math.round(f[rgba[i * 4]])) | Math.min(31, Math.round(f[rgba[i * 4 + 1]])) << 5 | Math.min(31, Math.round(f[rgba[i * 4 + 2]])) << 10; q5[i] = c; hist[c]++; }
+      let changed = false;
+      const err = () => { let e = 0; const p = this.pal; for (let i = 0; i < N; i += 7) { const c = q5[i], j = this.inv[c] * 3; e += ((c & 31) - p[j]) ** 2 + (((c >> 5) & 31) - p[j + 1]) ** 2 + ((c >> 10) - p[j + 2]) ** 2; } return e / Math.ceil(N / 7); };
+      if (!this.pal) { this.build(hist); this.err0 = err(); changed = true; }
+      else { const e = err(); if (e > 1.6 * this.err0 + 0.6) { this.build(hist); this.err0 = err(); changed = true; } }
+      const idx = new Uint8Array(N), inv = this.inv, amp = this.dither ? this.spread : 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x, o = amp * ((BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5);
+        const r = Math.min(31, Math.max(0, Math.round(f[rgba[i * 4]] + o))), g = Math.min(31, Math.max(0, Math.round(f[rgba[i * 4 + 1]] + o))), b = Math.min(31, Math.max(0, Math.round(f[rgba[i * 4 + 2]] + o)));
+        idx[i] = inv[r | g << 5 | b << 10];
+      }
+      return [idx, changed];
+    }
+    palBytes() { const o = new Uint8Array(512); for (let i = 0; i < 256; i++) { const v = this.pal[i * 3] | this.pal[i * 3 + 1] << 5 | this.pal[i * 3 + 2] << 10; o[i * 2] = v & 255; o[i * 2 + 1] = v >> 8; } return o; }
+  }
+
+  // 8-bit signed PCM with first-order noise shaping
+  function pcm8(L, R, gain) {
+    const N = L.length; if (!N) return [new Int8Array(0), new Int8Array(0)];
+    const ab = new Float32Array(Math.min(2 * N, 4e6)); const st = 2 * N / ab.length;
+    for (let i = 0; i < ab.length; i++) { const j = Math.floor(i * st); ab[i] = Math.abs(j & 1 ? R[j >> 1] : L[j >> 1]); }
+    const peak = Math.max(1e-4, percentile(ab, 99.9)), t = Math.tanh(1.1);
+    const one = (x) => { const o = new Int8Array(N); let e = 0; for (let i = 0; i < N; i++) { const v = Math.tanh(x[i] / peak * 1.1 * gain) / t * 126 - 0.5 * e; let q = Math.round(v); if (q > 127) q = 127; else if (q < -128) q = -128; e = q - v; o[i] = q; } return o; };
+    return [one(L), one(R)];
+  }
+
+  // Encoder for page-flipped 8 bpp bitmaps (stride = page width in pixels)
+  class Bitmap256 {
+    constructor(o) {
+      Object.assign(this, o); // w, h, stride, tol, dither, gamma
+      this.q = new Pal256(this.dither, this.gamma);
+      this.bw = this.w / 8; this.bh = this.h / 8;
+      this.buf = [null, null]; this.k = 0; this.sent = 0; this.lastIdx = null;
+    }
+    // returns packet bytes (u32 flags, [512 palette], runs, end)
+    frame(rgba) {
+      const [idx, palChanged] = this.q.quantize(rgba, this.w, this.h), pal = this.q.pal, b = this.k & 1, w = this.w;
+      const blocks = [];
+      const old = this.buf[b];
+      for (let by = 0; by < this.bh; by++) for (let bx = 0; bx < this.bw; bx++) {
+        let ch = !old;
+        if (!ch) { let cnt = 0;
+          for (let r = 0; r < 8 && !ch; r++) for (let c = 0; c < 8; c++) { const i = (by * 8 + r) * w + bx * 8 + c, a = old[i] * 3, n = idx[i] * 3;
+            if (a !== n) { const d = Math.max(Math.abs(pal[a] - pal[n]), Math.abs(pal[a + 1] - pal[n + 1]), Math.abs(pal[a + 2] - pal[n + 2])); if (d > (this.tol ? 2 : 0) && ++cnt > this.tol) { ch = true; break; } } } }
+        if (ch) blocks.push([by, bx]);
+      }
+      const nb = old ? old.slice() : new Uint8Array(w * this.h);
+      for (const [by, bx] of blocks) for (let r = 0; r < 8; r++) { const i = (by * 8 + r) * w + bx * 8; nb.set(idx.subarray(i, i + 8), i); }
+      this.buf[b] = nb; this.sent += blocks.length; this.k++;
+      const out = new ByteBuf(4 + 512 + blocks.length * 68 + 8);
+      out.push(palChanged ? 1 : 0); out.push(0); out.push(0); out.push(0);
+      if (palChanged) out.put(this.q.palBytes());
+      for (let i = 0; i < blocks.length;) {
+        const [by, bx] = blocks[i]; let j = i + 1;
+        while (j < blocks.length && blocks[j][0] === by && blocks[j][1] === blocks[j - 1][1] + 1) j++;
+        const width = j - i, off = by * 8 * this.stride + bx * 8;
+        out.push(off & 255); out.push(off >> 8); out.push(width); out.push(8);
+        for (let r = 0; r < 8; r++) { const s = (by * 8 + r) * w + bx * 8; out.put(nb.subarray(s, s + width * 8)); }
+        i = j;
+      }
+      out.push(0); out.push(0); out.push(0); out.push(0);
+      this.lastIdx = nb;
+      return out.bytes().slice();
+    }
+  }
+
+  // ---------------------------------------------------------------- GBA
+  const GBA_RATE = 16777216 / 924, GBA_SPF = 304, GBA_MAX = 32 * 1024 * 1024;
+  function gbaAffine(w, h) {
+    const s = Math.min(240 / w, 160 / h), pa = Math.round(256 / s), vw = w * 256 / pa, vh = h * 256 / pa;
+    const ox = Math.round((240 - vw) / 2), oy = Math.round((160 - vh) / 2);
+    return { pa, pd: pa, x: -ox * pa, y: -oy * pa };
+  }
+  class Gba {
+    constructor(o) {
+      Object.assign(this, o); // n, w, h, audio: [Int8Array L, Int8Array R] | null, stereo, tol, dither, gamma, title, players
+      this.enc = new Bitmap256({ w: this.w, h: this.h, stride: 240, tol: this.tol, dither: this.dither, gamma: this.gamma });
+      this.player = b64(this.players.gba); this.base = (this.player.length + 3) & ~3;
+      this.data = new ByteBuf(1 << 22); this.k = 0; this.full = false;
+      this.chan = this.audio ? (this.stereo ? 2 : 1) : 0;
+    }
+    get sent() { return this.enc.sent; }
+    add(rgba) {
+      if (this.full) return null;
+      const p = this.enc.frame(rgba);
+      const audioBytes = ((this.k + 1) * this.n * GBA_SPF + 64) * this.chan;
+      if (this.base + this.data.n + p.length + audioBytes + 64 > GBA_MAX) { this.full = true; return null; }
+      this.data.put(p); this.k++;
+      return p;
+    }
+    finish() {
+      const F = this.k, alen = F * this.n * GBA_SPF, video = this.base, aL = video + this.data.n;
+      const per = alen + 64, aR = this.chan === 2 ? aL + per : aL, total = aL + per * this.chan;
+      const rom = new Uint8Array(total + 4);
+      rom.set(this.player); rom.set(this.data.bytes(), video);
+      if (this.chan) {
+        const [L, R] = this.audio;
+        rom.set(new Uint8Array(L.buffer, L.byteOffset, Math.min(L.length, alen)), aL);
+        if (this.chan === 2) rom.set(new Uint8Array(R.buffer, R.byteOffset, Math.min(R.length, alen)), aR);
+      }
+      const af = gbaAffine(this.w, this.h), dv = new DataView(rom.buffer);
+      const cfg = [0x31414256, this.n, F, 0x08000000 + video, this.chan ? 0x08000000 + aL : 0, this.chan ? 0x08000000 + aR : 0, af.pa, af.pd, af.x, af.y];
+      cfg.forEach((v, i) => dv.setInt32(0x400 + i * 4, v | 0, true));
+      const t = String(this.title || "VIDEOBOY").toUpperCase().replace(/[^\x20-\x5F]/g, "?").slice(0, 12);
+      for (let i = 0; i < 12; i++) rom[0xA0 + i] = i < t.length ? t.charCodeAt(i) : 0;
+      let c = 0; for (let i = 0xA0; i <= 0xBC; i++) c -= rom[i]; rom[0xBD] = (c - 0x19) & 0xFF;
+      return rom;
+    }
+  }
+
+
+  // Decodes a GBA ROM exactly like the player (for the preview and for tests)
+  class GbaReader {
+    constructor(rom) {
+      const dv = new DataView(rom.buffer, rom.byteOffset);
+      this.rom = rom; this.gba = true;
+      [, this.n, this.frames, this.video, this.aL, this.aR, this.pa, this.pd, this.x, this.y] = Array.from({ length: 10 }, (_, i) => dv.getInt32(0x400 + i * 4, true));
+      this.video -= 0x08000000; if (this.aL) { this.aL -= 0x08000000; this.aR -= 0x08000000; }
+      this.npk = this.frames + 1; this.rate = GBA_RATE; this.aud = this.n * GBA_SPF; this.fps = LCD_FPS; this.W = 240; this.H = 160;
+      this.offsets = []; let p = this.video;
+      for (let k = 0; k < this.frames; k++) { this.offsets.push(p); const f = rom[p]; p += 4 + (f & 1 ? 512 : 0);
+        for (;;) { const rows = rom[p + 3], w = rom[p + 2]; p += 4; if (!rows) break; p += rows * w * 8; } }
+      this.reset();
+    }
+    reset() { this.k = 0; this.pages = [new Uint8Array(240 * 160), new Uint8Array(240 * 160)]; this.pal = new Uint16Array(256); this.pals = [null, null]; }
+    step() {
+      const rom = this.rom, k = this.k, pg = this.pages[k & 1]; let p = this.offsets[k];
+      if (rom[p] & 1) { this.pal = new Uint16Array(256); for (let i = 0; i < 256; i++) this.pal[i] = rom[p + 4 + i * 2] | rom[p + 5 + i * 2] << 8; p += 512; }
+      p += 4; this.pals[k & 1] = this.pal;
+      for (;;) { const off = rom[p] | rom[p + 1] << 8, w = rom[p + 2], rows = rom[p + 3]; p += 4; if (!rows) break;
+        for (let r = 0; r < rows; r++) { pg.set(rom.subarray(p, p + w * 8), off + r * 240); p += w * 8; } }
+      this.k++;
+    }
+    seek(k) { if (k < this.k - 1) this.reset(); while (this.k <= k) this.step(); }
+    audio() { // interleaved for preview: returns {L, R} Int8
+      const n = this.frames * this.aud, L = this.aL ? new Int8Array(this.rom.buffer, this.rom.byteOffset + this.aL, n) : new Int8Array(n);
+      return { L, R: this.aL ? new Int8Array(this.rom.buffer, this.rom.byteOffset + this.aR, n) : L };
+    }
+    // the screen as the BG2 affine hardware shows it (5-bit channels scaled to 8 bit)
+    render(k, out) {
+      const pg = this.pages[k & 1], pal = this.pals[k & 1];
+      for (let y = 0; y < 160; y++) for (let x = 0; x < 240; x++) {
+        const tx = (x * this.pa + this.x) >> 8, ty = (y * this.pd + this.y) >> 8, o = (y * 240 + x) * 4;
+        let c = 0; if (tx >= 0 && tx < 240 && ty >= 0 && ty < 160) c = pal[pg[ty * 240 + tx]];
+        out[o] = (c & 31) * 255 / 31 | 0; out[o + 1] = ((c >> 5) & 31) * 255 / 31 | 0; out[o + 2] = ((c >> 10) & 31) * 255 / 31 | 0; out[o + 3] = 255;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- Nintendo DS (.nds)
+  const NDS_SPF = 355, NDS_RATE = 33513982 / 2 / 789, NDS_FPS = 33513982 / 560190, NDS_MAX = 1024 * 1024 * 1024;
+  function affine(w, h, W, H) {
+    const s = Math.min(W / w, H / h), pa = Math.round(256 / s), vw = w * 256 / pa, vh = h * 256 / pa;
+    const ox = Math.round((W - vw) / 2), oy = Math.round((H - vh) / 2);
+    return { pa, pd: pa, x: -ox * pa, y: -oy * pa };
+  }
+  function crc16(u, n) { let c = 0xFFFF; for (let i = 0; i < n; i++) { c ^= u[i]; for (let k = 0; k < 8; k++) c = c & 1 ? (c >> 1) ^ 0xA001 : c >> 1; } return c; }
+  class Nds {
+    constructor(o) {
+      Object.assign(this, o); // n, w, h, audio: [Int8 L, Int8 R] | null, stereo, tol, dither, gamma, title, players
+      this.enc = new Bitmap256({ w: this.w, h: this.h, stride: 256, tol: this.tol, dither: this.dither, gamma: this.gamma });
+      this.chan = this.audio ? (this.stereo ? 2 : 1) : 0;
+      this.parts = []; this.bytes = 48; this.k = 0; this.full = false;
+    }
+    get sent() { return this.enc.sent; }
+    add(rgba) {
+      if (this.full) return null;
+      const v = this.enc.frame(rgba), na = this.n * NDS_SPF, al = na * this.chan;
+      const size = (v.length + al + 3) & ~3, r = new Uint8Array(4 + size);
+      new DataView(r.buffer).setUint32(0, size, true);
+      r.set(v, 4);
+      if (this.chan) {
+        const [L, R] = this.audio, s0 = this.k * na;
+        const cp = (src, at) => { const a = src.subarray(Math.min(src.length, s0), Math.min(src.length, s0 + na)); r.set(new Uint8Array(a.buffer, a.byteOffset, a.length), at); };
+        cp(L, 4 + v.length); if (this.chan === 2) cp(R, 4 + v.length + na);
+      }
+      if (this.bytes + r.length > NDS_MAX) { this.full = true; return null; }
+      this.parts.push(r); this.bytes += r.length; this.k++;
+      return v;
+    }
+    // returns an array of Uint8Array parts (the file can be larger than one buffer)
+    finishParts() {
+      const af = affine(this.w, this.h, 256, 192), hdr = new Uint8Array(48), dv = new DataView(hdr.buffer);
+      [0x53444256, 1, this.n, this.k, this.w, this.h, af.pa, af.pd, af.x, af.y, this.chan, NDS_SPF].forEach((v, i) => dv.setInt32(i * 4, v | 0, true));
+      const pl = b64(this.players.nds), start = (pl.length + 511) & ~511, total = start + this.bytes;
+      const head = new Uint8Array(start); head.set(pl);
+      const h = new DataView(head.buffer), fat = h.getUint32(0x48, true);
+      h.setUint32(fat, start, true); h.setUint32(fat + 4, total, true);       // video.bin = everything after the player
+      let cap = 0; while ((131072 << cap) < total && cap < 15) cap++; head[0x14] = cap;
+      const t = String(this.title || "VIDEOBOY").toUpperCase().replace(/[^\x20-\x5F]/g, "?").slice(0, 12);
+      for (let i = 0; i < 12; i++) head[i] = i < t.length ? t.charCodeAt(i) : 0;
+      h.setUint16(0x15E, crc16(head, 0x15E), true);
+      return [head, hdr, ...this.parts];
+    }
+    finish() { const parts = this.finishParts(); let n = 0; for (const p of parts) n += p.length; const o = new Uint8Array(n); let at = 0; for (const p of parts) { o.set(p, at); at += p.length; } return o; }
+  }
+  class NdsReader {
+    constructor(rom) {
+      const d = new DataView(rom.buffer, rom.byteOffset), fat = d.getUint32(0x48, true), start = d.getUint32(fat, true);
+      this.rom = rom; this.nds = true; this.base = start;
+      [, , this.n, this.frames, this.w, this.h, this.pa, this.pd, this.x, this.y, this.chan] = Array.from({ length: 12 }, (_, i) => d.getInt32(start + i * 4, true));
+      this.npk = this.frames + 1; this.rate = NDS_RATE; this.aud = this.n * NDS_SPF; this.fps = NDS_FPS; this.W = 256; this.H = 192;
+      this.offsets = []; this.audioAt = []; let p = start + 48;
+      for (let k = 0; k < this.frames; k++) { const size = d.getUint32(p, true); this.offsets.push(p + 4);
+        let q = p + 4; const f = rom[q]; q += 4 + (f & 1 ? 512 : 0);
+        for (;;) { const rows = rom[q + 3], w = rom[q + 2]; q += 4; if (!rows) break; q += rows * w * 8; }
+        this.audioAt.push(q); p += 4 + size; }
+      this.reset();
+    }
+    reset() { this.k = 0; this.pages = [new Uint8Array(256 * 192), new Uint8Array(256 * 192)]; this.pal = new Uint16Array(256); this.pals = [null, null]; }
+    step() {
+      const rom = this.rom, k = this.k, pg = this.pages[k & 1]; let p = this.offsets[k];
+      if (rom[p] & 1) { this.pal = new Uint16Array(256); for (let i = 0; i < 256; i++) this.pal[i] = rom[p + 4 + i * 2] | rom[p + 5 + i * 2] << 8; p += 512; }
+      p += 4; this.pals[k & 1] = this.pal;
+      for (;;) { const off = rom[p] | rom[p + 1] << 8, w = rom[p + 2], rows = rom[p + 3]; p += 4; if (!rows) break;
+        for (let r = 0; r < rows; r++) { pg.set(rom.subarray(p, p + w * 8), off + r * 256); p += w * 8; } }
+      this.k++;
+    }
+    seek(k) { if (k < this.k - 1) this.reset(); while (this.k <= k) this.step(); }
+    audio() {
+      const na = this.aud, L = new Int8Array(this.frames * na), R = this.chan === 2 ? new Int8Array(this.frames * na) : L;
+      for (let k = 0; k < this.frames; k++) { const a = this.audioAt[k]; if (!this.chan) break;
+        L.set(new Int8Array(this.rom.buffer, this.rom.byteOffset + a, na), k * na);
+        if (this.chan === 2) R.set(new Int8Array(this.rom.buffer, this.rom.byteOffset + a + na, na), k * na); }
+      return { L, R };
+    }
+    render(k, out) { // 256x192 top screen
+      const pg = this.pages[k & 1], pal = this.pals[k & 1];
+      for (let y = 0; y < 192; y++) for (let x = 0; x < 256; x++) {
+        const tx = (x * this.pa + this.x) >> 8, ty = (y * this.pd + this.y) >> 8, o = (y * 256 + x) * 4;
+        let c = 0; if (tx >= 0 && tx < 256 && ty >= 0 && ty < 192) c = pal[pg[ty * 256 + tx]];
+        out[o] = (c & 31) * 255 / 31 | 0; out[o + 1] = ((c >> 5) & 31) * 255 / 31 | 0; out[o + 2] = ((c >> 10) & 31) * 255 / 31 | 0; out[o + 3] = 255;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- planning for GBA / DS
+  const BITMAP = {
+    gba: { W: 240, H: 160, fps: LCD_FPS, max: GBA_MAX - 4096, rate: GBA_RATE, spf: GBA_SPF },
+    nds: { W: 256, H: 192, fps: NDS_FPS, max: NDS_MAX, rate: NDS_RATE, spf: NDS_SPF },
+  };
+  function bitmapSizes(target, aspect) {
+    const T = BITMAP[target], out = [];
+    for (const f of [1, 0.75, 0.5]) {
+      let w = Math.floor(T.W * f / 8) * 8, h = Math.round(w / aspect / 8) * 8;
+      if (h > T.H * f) { h = Math.floor(T.H * f / 8) * 8; w = Math.min(Math.floor(T.W * f / 8) * 8, Math.round(h * aspect / 8) * 8); }
+      out.push([Math.max(8, w), Math.max(8, h)]);
+    }
+    return out;
+  }
+  function bitmapFrameBytes(target, w, h, n, chan) { const T = BITMAP[target]; return 8 + 0.45 * w * h * 1.06 + n * T.spf * chan; }
+  function bitmapMaxSeconds(target, w, h, n, chan) { const T = BITMAP[target]; return T.max / bitmapFrameBytes(target, w, h, n, chan) * n / T.fps; }
+
   // ---------------------------------------------------------------- planning
   // Estimated bytes per video frame (for the length estimate in the UI)
   function frameBytes(mode, compress, tw, th, n) {
@@ -594,6 +902,8 @@ const VB = (() => {
 
   return { CPU_HZ, FRAME_CYCLES, LCD_FPS, LINES, BANK, MAX_BANKS, DMG_RATE, GBC_RATE, SILENCE,
     chooseLayoutDMG, chooseLayoutGBC, zMaxTiles, gbcCap, gbcFullSlots, sizeOK, maxSeconds, frameBytes,
-    quantizeAudio, dmgIndices, percentile, DmgNormal, DmgZ, Gbc, RomReader, tilesFromIdx };
+    quantizeAudio, dmgIndices, percentile, DmgNormal, DmgZ, Gbc, RomReader, tilesFromIdx,
+    Gba, GbaReader, gbaAffine, pcm8, GBA_RATE, GBA_SPF, Bitmap256, Pal256,
+    Nds, NdsReader, NDS_RATE, NDS_SPF, NDS_FPS, affine, BITMAP, bitmapSizes, bitmapFrameBytes, bitmapMaxSeconds };
 })();
 if (typeof module !== "undefined") module.exports = VB;
