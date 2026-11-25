@@ -251,6 +251,10 @@ For the Game Boy players: If you want to change `src/player.asm` (DMG) or
 sh src/build.sh      # builds both players and embeds them into videoboy.py
 ```
 
+## Support
+
+If Video Boy was useful to you, you can [buy me a coffee via PayPal](https://www.paypal.me/pedapedapeda). Thank you!
+
 ## Credits
 
 Preview footage and `demo_color.gbc`: "Big Buck Bunny" © Blender Foundation, [peach.blender.org](https://peach.blender.org),
