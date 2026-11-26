@@ -1,0 +1,8 @@
+#!/bin/sh
+# Video Boy command-line converter (videoboy.py). Needs python3, numpy and ffmpeg.
+for d in "${VIDEO_BOY_APP_DIR:-}" "$(dirname "$(readlink -f "$0")")/../share/video-boy" \
+         "${XDG_DATA_HOME:-$HOME/.local/share}/video-boy" /usr/share/video-boy /usr/local/share/video-boy \
+         "$(dirname "$(readlink -f "$0")")/.."; do
+    if [ -n "$d" ] && [ -f "$d/videoboy.py" ]; then exec python3 "$d/videoboy.py" "$@"; fi
+done
+echo "video-boy-cli: videoboy.py not found" >&2; exit 1

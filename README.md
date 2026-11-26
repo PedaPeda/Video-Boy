@@ -10,7 +10,7 @@ for Nintendo handhelds:
 | Game Boy Advance | `.gba` | up to 240×160, 256 colours | 18.2 kHz, 8-bit | GBA, GBA SP, **Game Boy Micro**, **DS / DS Lite** (GBA slot), **3DS** (open_agb_firm) |
 | Nintendo DS | `.nds` | up to 256×192, 256 colours | 21.2 kHz, 8-bit | **DS, DS Lite, DSi, 3DS / 2DS** (flash cart or TWiLight Menu++) |
 
-The [browser app](#browser-app-no-installation) builds all four. The command-line tool `videoboy.py`
+The [browser app](#browser-app-no-installation) and the [Linux app](#linux-app) build all four. The command-line tool `videoboy.py`
 builds Game Boy and Game Boy Color ROMs (see [Game Boy Color mode](#game-boy-color-mode---gbc)).
 
 | Game Boy | Game Boy Color | Game Boy Advance | Nintendo DS (top screen) |
@@ -49,6 +49,45 @@ the browser; the video is not uploaded anywhere, and Python or ffmpeg are not ne
 * Video formats: whatever the browser can play (MP4/H.264 and WebM in all major browsers).
 
 The app is built from `web/src/` with `python3 web/build.py` (also run by `src/build.sh`).
+
+## Linux app
+
+The converter as a desktop app for Linux: it opens in its own window (no tabs, no address bar), gets an entry
+with an icon in the application menu and works completely offline. The command-line tool comes along as
+`video-boy-cli`.
+
+**Ubuntu, Debian, Linux Mint, Pop!_OS, elementary and other Debian-based systems**
+
+Download [`video-boy_1.0.0_all.deb`](https://github.com/PedaPeda/Video-Boy/raw/main/linux/dist/video-boy_1.0.0_all.deb)
+and install it with a double-click, or:
+
+```sh
+sudo apt install ./video-boy_1.0.0_all.deb
+```
+
+**Any other distribution (Fedora, Arch, openSUSE, ...)**
+
+Download [`video-boy-1.0.0-linux.tar.gz`](https://github.com/PedaPeda/Video-Boy/raw/main/linux/dist/video-boy-1.0.0-linux.tar.gz), then:
+
+```sh
+tar xzf video-boy-1.0.0-linux.tar.gz
+cd video-boy-1.0.0
+./install.sh            # for your user, no root needed (sudo ./install.sh --system for everyone)
+./video-boy             # or run it right away without installing
+```
+
+From a clone of this repository, `sh linux/install.sh` installs the current version, and `sh linux/build.sh`
+rebuilds both packages into `linux/dist/`. `./uninstall.sh` removes an installation again
+(`sudo apt remove video-boy` for the .deb).
+
+* Start **Video Boy** from the application menu or run `video-boy`.
+* The window uses a Chromium-based browser if one is installed (Chrome, Chromium, Brave, Edge, Vivaldi, also as
+  Flatpak), otherwise Firefox. `VIDEO_BOY_BROWSER=/path/to/browser video-boy` picks a specific one.
+* The app is served from a small web server on `127.0.0.1` only (so Snap and Flatpak browsers can open it too);
+  it needs `python3`, which every desktop distribution has, and stops by itself when idle. Finished ROMs land in
+  your Downloads folder.
+* `video-boy-cli movie.mp4 --gbc --compress` works exactly like `python3 videoboy.py` and needs `numpy` and
+  `ffmpeg` (`sudo apt install python3-numpy ffmpeg`).
 
 ## Usage
 

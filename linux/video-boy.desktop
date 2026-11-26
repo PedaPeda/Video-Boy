@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Video Boy
+GenericName=Video to ROM Converter
+Comment=Turn videos into ROMs for Game Boy, Game Boy Color, GBA and Nintendo DS
+Exec=video-boy
+Icon=video-boy
+Terminal=false
+Categories=AudioVideo;Video;Game;Emulator;
+Keywords=gameboy;gbc;gba;nds;rom;video;converter;
+StartupNotify=true
+StartupWMClass=video-boy

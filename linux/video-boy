@@ -1,0 +1,111 @@
+#!/bin/sh
+# Video Boy for Linux - opens the converter in its own app window.
+# Everything runs locally in the browser engine; no video is uploaded anywhere.
+#
+#   video-boy              start the app
+#   video-boy --url        start the local server and only print the URL
+#   video-boy --help
+#
+# Environment: VIDEO_BOY_BROWSER=/path/to/browser  use this browser
+#              VIDEO_BOY_PORT=8765                  fixed port for the local server
+set -u
+
+VERSION="1.0.0"
+
+find_app_dir() {
+    self=$(readlink -f "$0" 2>/dev/null || echo "$0")
+    here=$(dirname "$self")
+    for d in "${VIDEO_BOY_APP_DIR:-}" \
+             "$here/../share/video-boy" \
+             "${XDG_DATA_HOME:-$HOME/.local/share}/video-boy" \
+             /usr/share/video-boy /usr/local/share/video-boy \
+             "$here/../web"; do
+        [ -n "$d" ] && [ -f "$d/index.html" ] && { (cd "$d" && pwd); return 0; }
+    done
+    return 1
+}
+
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0 ;;
+    -v|--version)
+        echo "Video Boy $VERSION"; exit 0 ;;
+esac
+
+APP_DIR=$(find_app_dir) || { echo "video-boy: app files not found (index.html)" >&2; exit 1; }
+
+# Snap/Flatpak browsers cannot read file:///usr/share, so the app is served from a tiny
+# local web server bound to 127.0.0.1. It stops by itself once the app has loaded and
+# has been idle for a while (the app is a single file and needs nothing more).
+URL=""
+if command -v python3 >/dev/null 2>&1; then
+    PORTFILE=$(mktemp "${TMPDIR:-/tmp}/video-boy.XXXXXX")
+    python3 - "$APP_DIR" "$PORTFILE" "${VIDEO_BOY_PORT:-0}" <<'PY' >/dev/null 2>&1 &
+import http.server, os, socketserver, sys, threading, time
+root, portfile, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+last = [time.time()]
+class H(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k): super().__init__(*a, directory=root, **k)
+    def log_message(self, *a): pass
+    def end_headers(self):
+        last[0] = time.time()
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+H.extensions_map.update({".js": "text/javascript", ".wasm": "application/wasm"})
+class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+srv = S(("127.0.0.1", port), H)
+with open(portfile, "w") as f: f.write(str(srv.server_address[1]))
+def idle():
+    while time.time() - last[0] < 600: time.sleep(5)
+    srv.shutdown()
+threading.Thread(target=idle, daemon=True).start()
+srv.serve_forever()
+PY
+    i=0
+    while [ $i -lt 50 ] && [ ! -s "$PORTFILE" ]; do sleep 0.1; i=$((i+1)); done
+    PORT=$(cat "$PORTFILE" 2>/dev/null); rm -f "$PORTFILE"
+    [ -n "$PORT" ] && URL="http://127.0.0.1:$PORT/index.html"
+fi
+[ -n "$URL" ] || URL="file://$APP_DIR/index.html"
+
+if [ "${1:-}" = "--url" ]; then
+    echo "$URL"
+    exit 0
+fi
+
+PROFILE="${XDG_CONFIG_HOME:-$HOME/.config}/video-boy/browser"
+mkdir -p "$PROFILE" 2>/dev/null
+
+run_chromium() {
+    exec "$1" --app="$URL" --class=video-boy --name=video-boy \
+        --user-data-dir="$PROFILE" --window-size=1280,900 \
+        --no-first-run --no-default-browser-check >/dev/null 2>&1
+}
+
+if [ -n "${VIDEO_BOY_BROWSER:-}" ]; then
+    case "$(basename "$VIDEO_BOY_BROWSER")" in
+        *firefox*|*librewolf*|*waterfox*) exec "$VIDEO_BOY_BROWSER" --new-window "$URL" ;;
+        *) run_chromium "$VIDEO_BOY_BROWSER" ;;
+    esac
+fi
+
+# Chromium-based browsers give a real app window (no tabs, no address bar).
+for b in google-chrome google-chrome-stable chromium chromium-browser brave-browser \
+         brave microsoft-edge microsoft-edge-stable vivaldi vivaldi-stable opera; do
+    command -v "$b" >/dev/null 2>&1 && run_chromium "$b"
+done
+for f in com.google.Chrome org.chromium.Chromium com.brave.Browser com.microsoft.Edge; do
+    if command -v flatpak >/dev/null 2>&1 && flatpak info "$f" >/dev/null 2>&1; then
+        exec flatpak run "$f" --app="$URL" --class=video-boy --window-size=1280,900 >/dev/null 2>&1
+    fi
+done
+for b in firefox firefox-esr librewolf; do
+    command -v "$b" >/dev/null 2>&1 && exec "$b" --new-window "$URL" >/dev/null 2>&1
+done
+if command -v xdg-open >/dev/null 2>&1; then
+    exec xdg-open "$URL" >/dev/null 2>&1
+fi
+echo "video-boy: no web browser found. Open this address in a browser: $URL" >&2
+exit 1
