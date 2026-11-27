@@ -331,6 +331,7 @@ body.gbc .only-dmg, body.gba .only-dmg, body.nds .only-dmg, body.dmg .only-gbc {
         <p><b>Nintendo DS:</b> copy the <code>.nds</code> file to a DS flash cart's microSD card, or start it on a DSi or 3DS with TWiLight Menu++. The video plays on the top screen.</p>
         <p>On every console: <kbd>START</kbd> pauses, <kbd>SELECT</kbd> restarts. Keep this tab in the foreground while converting; in the background the browser slows down playback.</p>
         <p class="tip">If Video Boy was useful to you, you can <a href="https://www.paypal.me/pedapedapeda" rel="noopener" target="_blank">buy me a coffee via PayPal</a>. Thank you!</p>
+        <p class="tip" id="counter-note" hidden>This online version counts page visits with an anonymous counter (hits.sh). Nothing about your video is ever sent.</p>
       </section>
     </div>
   </div>
@@ -2784,6 +2785,12 @@ $("download").onclick = async () => {
 };
 
 renderFps(); update(); idle();
+// Visit counter: only on the GitHub Pages version (not in the Linux app, local copies or the Claude artifact).
+if (/\.github\.io$/i.test(location.hostname)) {
+  const img = new Image(); img.referrerPolicy = "no-referrer"; img.alt = "";
+  img.src = "https://hits.sh/pedapeda.github.io/video-boy/app.svg";
+  document.getElementById("counter-note").hidden = false;
+}
 })();
 </script>
 </body>

@@ -1,5 +1,9 @@
 # VIDEO BOY: Video Player for Game Boy, Game Boy Color, Game Boy Advance and Nintendo DS
 
+[![Latest release](https://img.shields.io/github/v/release/PedaPeda/Video-Boy)](https://github.com/PedaPeda/Video-Boy/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/PedaPeda/Video-Boy/total)](https://github.com/PedaPeda/Video-Boy/releases)
+[![Views](https://hits.sh/github.com/PedaPeda/Video-Boy.svg?label=views)](https://hits.sh/github.com/PedaPeda/Video-Boy/)
+
 VIDEO BOY turns any video file (mp4, mkv, mov, webm …) into a ROM with **picture and stereo sound**
 for Nintendo handhelds:
 
@@ -39,6 +43,9 @@ the browser; the video is not uploaded anywhere, and Python or ffmpeg are not ne
 ![VIDEO BOY browser app](web/screenshot.png)
 
 * Open `web/index.html` in Chrome, Edge or Firefox (double-click is enough), or host it with GitHub Pages.
+  The single file is also attached to each [release](https://github.com/PedaPeda/Video-Boy/releases/latest) as `video-boy.html`.
+* The GitHub Pages version counts page visits with an anonymous [hits.sh](https://hits.sh) counter; local copies,
+  the Linux app and downloaded files don't.
 * All four targets (Game Boy, Game Boy Color, Game Boy Advance / Micro, Nintendo DS / 3DS), a live estimate of
   how much fits, and for Game Boy and Game Boy Color the matching `videoboy.py` command.
 * The preview decodes the finished ROM itself, so what you see and hear is exactly what the Game Boy will show.
@@ -58,7 +65,7 @@ with an icon in the application menu and works completely offline. The command-l
 
 **Ubuntu, Debian, Linux Mint, Pop!_OS, elementary and other Debian-based systems**
 
-Download [`video-boy_1.0.0_all.deb`](https://github.com/PedaPeda/Video-Boy/raw/main/linux/dist/video-boy_1.0.0_all.deb)
+Download [`video-boy_1.0.0_all.deb`](https://github.com/PedaPeda/Video-Boy/releases/latest/download/video-boy_1.0.0_all.deb)
 and install it with a double-click, or:
 
 ```sh
@@ -67,7 +74,7 @@ sudo apt install ./video-boy_1.0.0_all.deb
 
 **Any other distribution (Fedora, Arch, openSUSE, ...)**
 
-Download [`video-boy-1.0.0-linux.tar.gz`](https://github.com/PedaPeda/Video-Boy/raw/main/linux/dist/video-boy-1.0.0-linux.tar.gz), then:
+Download [`video-boy-1.0.0-linux.tar.gz`](https://github.com/PedaPeda/Video-Boy/releases/latest/download/video-boy-1.0.0-linux.tar.gz), then:
 
 ```sh
 tar xzf video-boy-1.0.0-linux.tar.gz
@@ -77,7 +84,8 @@ cd video-boy-1.0.0
 ```
 
 From a clone of this repository, `sh linux/install.sh` installs the current version, and `sh linux/build.sh`
-rebuilds both packages into `linux/dist/`. `./uninstall.sh` removes an installation again
+rebuilds both packages into `linux/dist/`. All files are also on the
+[releases page](https://github.com/PedaPeda/Video-Boy/releases). `./uninstall.sh` removes an installation again
 (`sudo apt remove video-boy` for the .deb).
 
 * Start **Video Boy** from the application menu or run `video-boy`.
