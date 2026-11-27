@@ -1,10 +1,14 @@
-# Publishes a GitHub release when a version tag (v1.2.3) is pushed.
+# Publishes a GitHub release for every new version that reaches main
+# (the version comes from VERSION= in linux/video-boy), and also for pushed v* tags.
 # Attaches the Linux packages from linux/dist/ and the web app as video-boy.html,
-# so GitHub counts the downloads.
+# so GitHub counts the downloads. Existing releases are left alone.
 name: Release
 on:
   push:
+    branches: [main]
+    paths: ["linux/**", "web/index.html", ".github/workflows/release.yml", ".github/release-notes.md"]
     tags: ["v*"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -16,8 +20,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          V="${GITHUB_REF_NAME#v}"
+          V=$(sed -n 's/^VERSION="\(.*\)"/\1/p' linux/video-boy)
+          TAG="v$V"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"; exit 0
+          fi
           cp web/index.html video-boy.html
           sed "s/VERSION/$V/g" .github/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" --title "Video Boy $V" --notes-file notes.md \
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Video Boy $V" --notes-file notes.md \
             "linux/dist/video-boy_${V}_all.deb" "linux/dist/video-boy-${V}-linux.tar.gz" video-boy.html
